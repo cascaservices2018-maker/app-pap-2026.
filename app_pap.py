@@ -29,7 +29,7 @@ estilos_css = f"""
     [data-testid="stSidebar"] {{
         background-color: {COLOR_BARRA_LATERAL};
     }}
-    [data-testid="stMetricValue"], h1, h2, h3, p {{
+    [data-testid="stMetricValue"], h1, h2, h3, p, li {{
         color: white !important;
     }}
     .vega-embed svg text {{
@@ -146,7 +146,15 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["1. Registrar PROYECTO", "2. Carga Masiva ENTREGABLES", "3. 📝 Buscar y Editar", "4. 📊 Gráficas", "5. 📥 Descargar Excel"])
+# DEFINICIÓN DE PESTAÑAS (AHORA SON 6)
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "1. Registrar PROYECTO", 
+    "2. Carga Masiva ENTREGABLES", 
+    "3. 📝 Buscar y Editar", 
+    "4. 📊 Gráficas", 
+    "5. 📥 Descargar Excel",
+    "6. 📖 Glosario"
+])
 
 # ==========================================
 # PESTAÑA 1
@@ -183,7 +191,7 @@ with tab1:
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2 (CORREGIDA PARA EVITAR ERROR DE API)
+# PESTAÑA 2
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -200,7 +208,6 @@ with tab2:
         
         st.caption(f"Categoría: **{cat_auto}** | Espacios iniciales: **{estimado}**")
 
-        # --- LÓGICA DE MEMORIA (FIXED) ---
         if proy_sel not in st.session_state.borradores:
             df_e = load_data("Entregables")
             existentes = pd.DataFrame()
@@ -214,10 +221,8 @@ with tab2:
                     "Subcategoría": "Subcategorías",
                     "Plantillas": "Plantillas_Usadas"
                 })
-                # IMPORTANTE: Forzar tipo string y rellenar nulos para evitar el error de StreamlitAPI
                 st.session_state.borradores[proy_sel] = datos_carga.fillna("").astype(str)
             else:
-                # IMPORTANTE: Inicializar con "" y no con NaN
                 st.session_state.borradores[proy_sel] = pd.DataFrame(
                     "", 
                     index=range(estimado), 
@@ -238,7 +243,6 @@ with tab2:
             }
         )
         
-        # Guardamos en memoria cada cambio
         st.session_state.borradores[proy_sel] = edited_df
 
         if st.button("🚀 Guardar Cambios (Reemplazar)"):
@@ -433,3 +437,37 @@ with tab5:
         b = io.BytesIO()
         with pd.ExcelWriter(b, engine='openpyxl') as w: load_data("Proyectos").to_excel(w, 'Proyectos', index=False); load_data("Entregables").to_excel(w, 'Entregables', index=False)
         st.download_button("⬇️ Descargar", b.getvalue(), "Reporte.xlsx")
+
+# ==========================================
+# PESTAÑA 6: GLOSARIO
+# ==========================================
+with tab6:
+    st.header("📖 Glosario de Términos")
+    st.markdown("""
+    ### 🗂️ Categorías
+
+    * **Gestión:** Archivos que tengan que ver con la Dirección integral del proyecto (artística, técnica y administrativa), proyectos y subproyectos de la organización, así como la asignación de recursos (presupuestos, cotizaciones, inventarios, análisis de recursos humanos), ejecución y control del proyecto, como rutas críticas, cronogramas, etc.
+    * **Comunicación:** Diseño y ejecución de mensajes, canales  para alinear a internos/externos. Plan de comunicación, gestión de interesados, branding interno y externo, documentos de gestión de redes sociales, página web, marketing, memoria/archivo.
+    * **Infraestructura:** Instalaciones fijas y móviles, planos arquitectónicos, señalética. Mobiliario y equipo técnico (tramoya, producción, herramientas, tecnológico). Mantenimiento de instalaciones.
+    * **Investigación:** História de la finca, del CEDRAM, mapeos de la zona, sobre Pátzcuaro, sobre públicos, FODA, Círculos de Rosso, reporte PAP, presentación final PAP etc.
+
+    ---
+
+    ### 📂 Subcategorías
+
+    #### 🔹 GESTIÓN
+    * **Administración:** Todo lo relacionado con cronogramas, planteamiento de necesidades, planificación, seguimiento y toma de decisiones.
+    * **Financiamiento:** Archivos de seguimiento a las becas, guías para aplicación a distintos planes de financiamiento, presupuestos, cotizaciones, otros recursos con información de posibles donantes, patrocinios, etc.
+    * **Vinculación:** Información de contacto, investigación y formatos de comunicación para y de proyectos que te acerquen a determinados públicos y agentes externos: personas, líderes de opinión, escuelas, planteles educativos con los que el CEDRAM puede generar un lazo. Relaciones públicas. Con quién le convendría al CEDRAM trabajar de cerca y cómo puede acercarse.
+
+    #### 🔹 COMUNICACIÓN
+    * **Memoria/archivo CEDRAM:** Archivos como fotografías, videos, etc. que funcionen como memoria de las actividades realizadas por el equipo del CEDRAM.
+    * **Memoria/archivo PAP:** Archivos como fotografías, videos, etc. que funcionen como memoria de las actividades realizadas por el equipo del PAP.
+    * **Diseño:** Todo lo relacionado con la creación visual y conceptual de los proyectos como por ejemplo ideas gráficas, referencias, propuestas creativas, identidad visual, materiales de apoyo según el proyecto (folletos, pósters, infografías, plantillas).
+    * **Difusión:** Estrategias y materiales para dar a conocer los proyectos. Incluye contenido para redes sociales, campañas de comunicación, textos, imágenes, videos, calendarios de publicación y seguimiento de alcance e impacto, souvenirs.
+
+    #### 🔹 INFRAESTRUCTURA
+    * **Diseño arquitectónico:** Archivos relacionados con el planteamiento y desarrollo de espacios. Incluye planos, conceptos espaciales, renders, referencias arquitectónicas, propuestas de uso de espacios y evolución de diseño.
+    * **Mantenimiento:** Señalética, mantenimiento y remodelación de espacios.
+    * **Productos teatrales:** Vestuario (diseño y realización), Kamishibai.
+    """)
