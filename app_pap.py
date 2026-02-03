@@ -9,6 +9,8 @@ st.set_page_config(page_title="Gestión PAP - Nube", layout="wide", page_icon="�
 
 # --- LISTAS FIJAS ---
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
+# (Nota: La lista de subcategorías ya no se usa estricta en la tabla para permitir múltiples, 
+# pero la dejamos aquí por si se necesita filtrar en el futuro)
 SUBCATEGORIAS_FIJAS = [
     "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", 
     "Memoria/archivo PAP", "Diseño", "Difusión", 
@@ -37,7 +39,7 @@ st.markdown("---")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "1. Registrar PROYECTO", 
-    "2. Carga Masiva ENTREGABLES", # ¡Nombre cambiado!
+    "2. Carga Masiva ENTREGABLES", 
     "3. 🔍 Buscar / Eliminar",
     "4. 📊 Gráficas",
     "5. 📥 Descargar Excel"
@@ -62,7 +64,6 @@ with tab1:
         
         c_ent, c_com = st.columns(2)
         with c_ent:
-            # Aquí definimos cuántos entregables se esperan
             num_entregables = st.number_input("Estimado de Entregables", min_value=1, step=1, value=1)
         with c_com:
             comentarios = st.text_area("Comentarios")
@@ -88,11 +89,11 @@ with tab1:
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (¡NUEVA LÓGICA!)
+# PESTAÑA 2: CARGA MASIVA (CORREGIDA PARA MÚLTIPLES SUBCATEGORÍAS)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida de Entregables")
-    st.write("Selecciona el proyecto y llena la tabla tipo Excel.")
+    st.info("💡 **Tip:** En 'Subcategorías', puedes escribir varias separadas por coma. Ej: _Diseño, Difusión_")
     
     df_p = load_data("Proyectos")
     
@@ -103,31 +104,28 @@ with tab2:
             lista_proyectos = sorted(df_p["Nombre del Proyecto"].unique().tolist())
             proyecto_sel = st.selectbox("Selecciona el Proyecto:", lista_proyectos)
             
-            # --- MAGIA: Detectar datos del proyecto ---
+            # Datos del proyecto
             info_proyecto = df_p[df_p["Nombre del Proyecto"] == proyecto_sel].iloc[0]
             cat_auto = info_proyecto.get("Categoría", "General")
-            num_estimado = int(info_proyecto.get("Num_Entregables", 5)) # Por defecto 5 si falla
+            num_estimado = int(info_proyecto.get("Num_Entregables", 5))
             
-            st.info(f"📂 Categoría: **{cat_auto}** | 🎯 Entregables esperados: **{num_estimado}**")
-            st.caption("La tabla de abajo ya tiene las filas listas para que llenes rápido.")
+            st.caption(f"Categoría: **{cat_auto}** | Espacios generados: **{num_estimado}**")
 
-            # --- PREPARAR LA TABLA EDITABLE ---
-            # Creamos un Dataframe vacío con el número de filas exacto
+            # Tabla Editable
             plantilla_data = pd.DataFrame(
                 index=range(num_estimado), 
-                columns=["Nombre_Entregable", "Contenido", "Subcategoría", "Plantillas_Usadas"]
+                columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]
             )
             
-            # Mostramos el editor tipo Excel
-            st.write("👇 **Escribe directamente aquí:**")
+            st.write("👇 **Llena la tabla:**")
             edited_df = st.data_editor(
                 plantilla_data,
-                num_rows="dynamic", # Permite agregar más filas si te faltaron
+                num_rows="dynamic",
                 column_config={
-                    "Subcategoría": st.column_config.SelectboxColumn(
-                        "Subcategoría",
-                        options=SUBCATEGORIAS_FIJAS,
-                        required=True
+                    "Subcategorías": st.column_config.TextColumn(
+                        "Subcategoría(s)",
+                        help="Ej: Vinculación, Financiamiento (Separadas por coma)",
+                        default="General"
                     ),
                     "Nombre_Entregable": st.column_config.TextColumn("Nombre Entregable", required=True),
                     "Contenido": st.column_config.TextColumn("Contenido/Descripción", width="large"),
@@ -136,17 +134,14 @@ with tab2:
                 key="editor_entregables"
             )
 
-            # --- BOTÓN DE GUARDADO MASIVO ---
             if st.button("🚀 Guardar Todos los Entregables"):
-                # Filtramos las filas vacías (donde no pusieron nombre)
                 datos_validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
                 
                 if datos_validos.empty:
-                    st.error("La tabla está vacía. Escribe algo antes de guardar.")
+                    st.error("La tabla está vacía.")
                 else:
                     df_ent_cloud = load_data("Entregables")
                     
-                    # Agregamos las columnas automáticas que faltan
                     nuevas_filas = []
                     fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
@@ -156,17 +151,15 @@ with tab2:
                             "Entregable": row["Nombre_Entregable"],
                             "Contenido": row["Contenido"],
                             "Categoría": cat_auto,
-                            "Subcategoría": row["Subcategoría"],
+                            "Subcategoría": row["Subcategorías"], # Guarda el texto tal cual (ej. "A, B")
                             "Plantillas": row["Plantillas_Usadas"],
                             "Fecha_Registro": fecha_hoy
                         }
                         nuevas_filas.append(fila)
                     
-                    # Guardamos en la nube
                     df_final = pd.concat([df_ent_cloud, pd.DataFrame(nuevas_filas)], ignore_index=True)
                     save_data(df_final, "Entregables")
-                    
-                    st.success(f"¡Éxito! Se guardaron {len(nuevas_filas)} entregables de golpe.")
+                    st.success(f"¡Éxito! Se guardaron {len(nuevas_filas)} entregables.")
                     st.balloons()
 
 # ==========================================
@@ -201,7 +194,7 @@ with tab3:
             st.info("No hay entregables aún.")
 
         st.markdown("---")
-        with st.expander("🗑️ Zona de Borrado (Afecta a Google Sheets)"):
+        with st.expander("🗑️ Zona de Borrado"):
             to_del = st.selectbox("Proyecto a eliminar:", df_proy["Nombre del Proyecto"].unique())
             if st.button("Eliminar Definitivamente"):
                 df_proy_new = df_proy[df_proy["Nombre del Proyecto"] != to_del]
@@ -210,11 +203,11 @@ with tab3:
                     save_data(df_ent_new, "Entregables")
                 
                 save_data(df_proy_new, "Proyectos")
-                st.success("Eliminado de la nube.")
+                st.success("Eliminado.")
                 st.rerun()
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (CON FILTROS)
+# PESTAÑA 4: GRÁFICAS (INTELIGENTE)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -222,20 +215,20 @@ with tab4:
         df_p_s = load_data("Proyectos")
         df_e_s = load_data("Entregables")
     except:
-        st.error("No se pudieron cargar los datos.")
+        st.error("Error cargando datos.")
         df_p_s = pd.DataFrame()
         df_e_s = pd.DataFrame()
 
     if not df_p_s.empty and "Año" in df_p_s.columns:
-        st.markdown("#### Configuración de Vista")
+        st.markdown("#### Filtros")
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
-             years_g = st.multiselect("Filtrar por Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()))
+             years_g = st.multiselect("Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()))
         
         with col_g2:
              all_periods = ["Primavera", "Verano", "Otoño"]
-             periods_g = st.multiselect("Filtrar por Periodo", all_periods, default=all_periods)
+             periods_g = st.multiselect("Periodo", all_periods, default=all_periods)
         
         df_filtered = df_p_s[
             df_p_s["Año"].isin(years_g) & 
@@ -243,7 +236,7 @@ with tab4:
         ]
         
         if df_filtered.empty:
-            st.warning("No hay datos con esos filtros.")
+            st.warning("No hay datos.")
         else:
             st.markdown("---")
             col_kpi1, col_kpi2 = st.columns(2)
@@ -267,10 +260,10 @@ with tab4:
                 st.bar_chart(df_filtered["Categoría"].value_counts())
                 
             st.markdown("---")
-            st.subheader("📦 Subcategorías (Filtrado)")
+            st.subheader("📦 Subcategorías (Desglosadas)")
             if not df_e_filtered.empty and "Subcategoría" in df_e_filtered.columns:
-                 # Manejo de subcategorías múltiples si es necesario
-                 series_sub = df_e_filtered["Subcategoría"].astype(str).str.split(', ').explode()
+                 # Truco: Separa por comas, quita espacios extra y cuenta cada una por separado
+                 series_sub = df_e_filtered["Subcategoría"].astype(str).str.split(',').explode().str.strip()
                  st.bar_chart(series_sub.value_counts())
 
 # ==========================================
