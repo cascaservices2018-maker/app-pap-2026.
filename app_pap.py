@@ -13,14 +13,16 @@ CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigaci
 # --- CONEXIÓN A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNCIONES ---
+# --- FUNCIÓN CHISMOSA (MODO DEBUG) ---
 def load_data(sheet_name):
     try:
         df = conn.read(worksheet=sheet_name, ttl=0)
         if not df.empty:
             df.columns = df.columns.str.strip()
         return df
-    except:
+    except Exception as e:
+        # ESTO NOS DIRÁ EL ERROR REAL
+        st.error(f"🚨 ERROR CRÍTICO leyendo '{sheet_name}': {e}")
         return pd.DataFrame()
 
 def save_data(df, sheet_name):
@@ -89,7 +91,7 @@ with tab2:
     df_p = load_data("Proyectos")
     
     if df_p.empty:
-        st.warning("No hay proyectos registrados.")
+        st.warning("No se encontraron proyectos (o hubo error de lectura, revisa arriba).")
     else:
         if "Nombre del Proyecto" in df_p.columns:
             lista_proyectos = sorted(df_p["Nombre del Proyecto"].unique().tolist())
@@ -113,7 +115,6 @@ with tab2:
 
             st.write("👇 **Llena la tabla:**")
             
-            # Volvemos a use_container_width=True (Aunque salga rojo, es lo seguro)
             edited_df = st.data_editor(
                 st.session_state[session_key],
                 num_rows="dynamic",
