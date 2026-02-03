@@ -15,7 +15,7 @@ st.set_page_config(
 
 # --- TU LOGO AQUÍ ---
 # Puedes cambiar este link por el de tu universidad o subir una imagen a GitHub
-LOGO_URL = "https://cdn-icons-png.flaticon.com/512/1087/1087815.png"
+LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
 
 # --- LISTAS FIJAS ---
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
@@ -376,3 +376,4 @@ with tab5:
                 )
             except Exception as e:
                 st.error(f"Error: {e}")
+
