@@ -5,6 +5,7 @@ from streamlit_gsheets import GSheetsConnection
 import io
 import time
 import altair as alt
+import unicodedata # <--- Necesario para quitar acentos al comparar
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -37,6 +38,58 @@ estilos_css = f"""
 </style>
 """
 st.markdown(estilos_css, unsafe_allow_html=True)
+
+# ==========================================
+# 📖 DICCIONARIO DE CORRECCIÓN ORTOGRÁFICA
+# ==========================================
+DICCIONARIO_CORRECTO = {
+    "gestion": "Gestión",
+    "comunicacion": "Comunicación",
+    "infraestructura": "Infraestructura",
+    "investigacion": "Investigación",
+    "difusion": "Difusión",
+    "vinculacion": "Vinculación",
+    "financiamiento": "Financiamiento",
+    "diseno": "Diseño",
+    "arquitectonico": "Arquitectónico",
+    "teatrales": "Teatrales",
+    "memoria/archivo": "Memoria/Archivo",
+    "mantenimiento": "Mantenimiento",
+    "productos": "Productos"
+}
+
+def normalizar_comparacion(texto):
+    """Quita acentos y pone minúsculas para comparar (ej: 'Gestión' -> 'gestion')"""
+    if pd.isna(texto) or texto == "": return ""
+    texto = str(texto).lower().strip()
+    return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+
+def limpiar_textos(texto_sucio):
+    """
+    1. Separa por comas.
+    2. Busca errores ortográficos y los corrige.
+    3. Elimina duplicados (ej: 'Diseño, diseño' -> 'Diseño').
+    """
+    if pd.isna(texto_sucio) or str(texto_sucio).strip() == "": return ""
+    
+    palabras = [p.strip() for p in str(texto_sucio).split(',')]
+    palabras_corregidas = []
+    
+    for p in palabras:
+        p_norm = normalizar_comparacion(p)
+        encontrado = False
+        # Buscar coincidencia en el diccionario
+        for error, correccion in DICCIONARIO_CORRECTO.items():
+            if error in p_norm: 
+                palabras_corregidas.append(correccion)
+                encontrado = True
+                break
+        if not encontrado:
+            # Si no está en el diccionario, solo poner mayúscula inicial
+            palabras_corregidas.append(p.capitalize()) 
+            
+    # Eliminar duplicados y ordenar alfabéticamente
+    return ", ".join(sorted(list(dict.fromkeys(palabras_corregidas))))
 
 # ==========================================
 # 🔗 CONFIGURACIÓN DEL SISTEMA
@@ -80,13 +133,6 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e:
         st.error(f"No se pudo guardar: {e}")
-
-# --- FUNCIÓN DE LIMPIEZA AUTOMÁTICA 🧹 ---
-def limpiar_textos(texto):
-    if pd.isna(texto) or texto == "":
-        return ""
-    items = [x.strip().capitalize() for x in str(texto).split(',')]
-    return ", ".join(items)
 
 def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF"):
     chart = alt.Chart(df).mark_bar(color=color_barra).encode(
@@ -149,7 +195,8 @@ with tab1:
                 if not df_proy.empty and "Nombre del Proyecto" in df_proy.columns and nombre_proyecto in df_proy["Nombre del Proyecto"].values:
                      st.warning("⚠️ Ya existe un proyecto con ese nombre.")
                 else:
-                    categoria_str = ", ".join(cats_seleccionadas)
+                    # Limpiamos antes de guardar
+                    categoria_str = limpiar_textos(", ".join(cats_seleccionadas))
                     nuevo = {
                         "Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre_proyecto,
                         "Descripción": descripcion, "Num_Entregables": num_entregables,
@@ -199,7 +246,9 @@ with tab2:
             if datos_validos.empty: st.error("La tabla está vacía.")
             else:
                 try:
+                    # Limpieza automática antes de guardar
                     datos_validos["Subcategorías"] = datos_validos["Subcategorías"].apply(limpiar_textos)
+                    
                     df_ent_cloud = load_data("Entregables")
                     nuevas_filas = []
                     fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -222,21 +271,23 @@ with tab2:
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
-    st.info("💡 **Nota:** Si ves categorías duplicadas, da clic en el botón 'Actualizar' y se arreglarán solas.")
+    st.info("💡 **Nota:** Si ves categorías duplicadas o mal escritas, da clic en el botón 'Actualizar' y se arreglarán solas.")
     
     df_proy = load_data("Proyectos")
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
+        # Preparación de filtros usando la limpieza visual (sin guardar aún)
         todas_cats = set()
         if "Categoría" in df_proy.columns:
             for c in df_proy["Categoría"].dropna(): 
-                todas_cats.update([x.strip().capitalize() for x in str(c).split(',')])
+                # Usamos limpiar_textos para mostrar opciones limpias en el filtro
+                todas_cats.update([limpiar_textos(x) for x in str(c).split(',')])
         
         todas_subs = set()
         if not df_ent.empty and "Subcategoría" in df_ent.columns:
             for s in df_ent["Subcategoría"].dropna(): 
-                todas_subs.update([x.strip().capitalize() for x in str(s).split(',')])
+                todas_subs.update([limpiar_textos(x) for x in str(s).split(',')])
 
         c_nom, c1, c2, c3, c4 = st.columns(5)
         with c_nom: 
@@ -250,45 +301,55 @@ with tab3:
         df_view = df_proy.copy()
         df_ent_view = df_ent.copy() if not df_ent.empty else pd.DataFrame()
 
+        # Filtros con lógica de búsqueda flexible (normalizada)
         if f_nombre: df_view = df_view[df_view["Nombre del Proyecto"].isin(f_nombre)]
         if f_year: df_view = df_view[df_view["Año"].isin(f_year)]
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
+        
         if f_cat:
-            mask_cat = df_view["Categoría"].apply(lambda x: any(item in [c.strip().capitalize() for c in str(x).split(',')] for item in f_cat))
+            # Comparamos la versión limpia de la celda con la selección del filtro
+            mask_cat = df_view["Categoría"].apply(lambda x: any(limpiar_textos(c) in f_cat for c in str(x).split(',')))
             df_view = df_view[mask_cat]
+        
         if f_sub and not df_ent_view.empty:
-            mask_sub = df_ent_view["Subcategoría"].apply(lambda x: any(item in [s.strip().capitalize() for s in str(x).split(',')] for item in f_sub))
+            mask_sub = df_ent_view["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))
             df_ent_view = df_ent_view[mask_sub]
             df_view = df_view[df_view["Nombre del Proyecto"].isin(df_ent_view["Proyecto_Padre"].unique())]
         
+        # --- EDICIÓN PROYECTOS ---
         st.subheader(f"1. Proyectos ({len(df_view)})")
         edited_proy = st.data_editor(df_view, use_container_width=True, key="editor_proyectos_main", num_rows="fixed", column_config={"Categoría": st.column_config.TextColumn("Categoría(s)")})
         
         if st.button("💾 Actualizar Cambios en Proyectos"):
             try:
+                # Limpieza AL GUARDAR
                 if "Categoría" in edited_proy.columns: edited_proy["Categoría"] = edited_proy["Categoría"].apply(limpiar_textos)
                 df_master_proy = load_data("Proyectos")
                 df_master_proy.update(edited_proy)
                 save_data(df_master_proy, "Proyectos")
-                st.success("✅ Actualizado.")
+                st.success("✅ Proyectos actualizados y ortografía corregida.")
             except Exception as e: st.error(f"Error: {e}")
 
         st.markdown("---")
 
+        # --- EDICIÓN ENTREGABLES ---
         st.subheader("2. Entregables Asociados")
         if not df_ent.empty:
-            if f_sub: df_ent_final = df_ent_view[df_ent_view["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
-            else: df_ent_final = df_ent[df_ent["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
+            if f_sub: 
+                df_ent_final = df_ent_view[df_ent_view["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
+            else: 
+                df_ent_final = df_ent[df_ent["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
             
             if not df_ent_final.empty:
                 edited_ent = st.data_editor(df_ent_final, use_container_width=True, key="editor_entregables_main", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
                 if st.button("💾 Actualizar Cambios en Entregables"):
                     try:
+                        # Limpieza AL GUARDAR
                         if "Subcategoría" in edited_ent.columns: edited_ent["Subcategoría"] = edited_ent["Subcategoría"].apply(limpiar_textos)
                         df_master_ent = load_data("Entregables")
                         df_master_ent.update(edited_ent)
                         save_data(df_master_ent, "Entregables")
-                        st.success("✅ Actualizado.")
+                        st.success("✅ Entregables actualizados y ortografía corregida.")
                     except Exception as e: st.error(f"Error: {e}")
             else: st.info("No hay entregables con estos filtros.")
         else: st.info("Vacío.")
@@ -306,7 +367,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4 (GRÁFICAS - CORREGIDAS)
+# PESTAÑA 4 (GRÁFICAS - CORREGIDAS + LIMPIEZA)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -314,13 +375,21 @@ with tab4:
     except: df_p_s = pd.DataFrame(); df_e_s = pd.DataFrame()
 
     if not df_p_s.empty and "Año" in df_p_s.columns:
-        cats_graph = set()
+        # APLICAMOS LIMPIEZA EN VIVO PARA LAS GRÁFICAS (sin guardar en DB, solo visual)
         if "Categoría" in df_p_s.columns:
-            for c in df_p_s["Categoría"].dropna(): cats_graph.update([x.strip().capitalize() for x in str(c).split(',')])
+            df_p_s["Categoría"] = df_p_s["Categoría"].apply(limpiar_textos)
+        if not df_e_s.empty and "Subcategoría" in df_e_s.columns:
+            df_e_s["Subcategoría"] = df_e_s["Subcategoría"].apply(limpiar_textos)
+
+        # Preparación de filtros (usando datos ya limpios)
+        cats_graph = set()
+        for c in df_p_s["Categoría"].dropna(): 
+            cats_graph.update([x.strip() for x in str(c).split(',') if x.strip()])
         
         subs_graph = set()
-        if not df_e_s.empty and "Subcategoría" in df_e_s.columns:
-            for s in df_e_s["Subcategoría"].dropna(): subs_graph.update([x.strip().capitalize() for x in str(s).split(',')])
+        if not df_e_s.empty:
+            for s in df_e_s["Subcategoría"].dropna(): 
+                subs_graph.update([x.strip() for x in str(s).split(',') if x.strip()])
 
         c1, c2, c3, c4 = st.columns(4)
         with c1: years_g = st.multiselect("Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()))
@@ -332,11 +401,11 @@ with tab4:
         df_e_f = df_e_s.copy() if not df_e_s.empty else pd.DataFrame()
 
         if cat_g:
-            mask_cat = df_f["Categoría"].apply(lambda x: any(item in [c.strip().capitalize() for c in str(x).split(',')] for item in cat_g))
+            mask_cat = df_f["Categoría"].apply(lambda x: any(item in cat_g for item in str(x).split(', ')))
             df_f = df_f[mask_cat]
 
         if sub_g and not df_e_f.empty:
-            mask_sub = df_e_f["Subcategoría"].apply(lambda x: any(item in [s.strip().capitalize() for s in str(x).split(',')] for item in sub_g))
+            mask_sub = df_e_f["Subcategoría"].apply(lambda x: any(item in sub_g for item in str(x).split(', ')))
             df_e_f = df_e_f[mask_sub]
             df_f = df_f[df_f["Nombre del Proyecto"].isin(df_e_f["Proyecto_Padre"].unique())]
 
@@ -363,7 +432,6 @@ with tab4:
                 df_chart_anual = pd.concat([p_anios, e_anios], ignore_index=True)
                 
                 if not df_chart_anual.empty:
-                    # CONFIGURACIÓN CORREGIDA PARA ALTAIR (FACET)
                     base = alt.Chart(df_chart_anual).encode(
                         x=alt.X('Tipo:N', title=None, axis=None),
                         color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
@@ -378,7 +446,6 @@ with tab4:
                         text=alt.Text('Total:Q')
                     )
                     
-                    # AQUÍ ESTÁ LA CORRECCIÓN: .facet() al final en lugar de .encode(column=...)
                     chart_anual = alt.layer(bars, text).properties(
                         height=250
                     ).facet(
@@ -411,14 +478,14 @@ with tab4:
             with c2:
                 st.subheader("Por Categoría")
                 if "Categoría" in df_f.columns:
-                    sc = df_f["Categoría"].astype(str).str.split(',').explode().str.strip().str.capitalize()
+                    sc = df_f["Categoría"].astype(str).str.split(',').explode().str.strip() # Ya viene limpio arriba
                     sc = sc[sc != "Nan"]; sc = sc[sc != ""]
                     dc = sc.value_counts().reset_index(); dc.columns=["Categoría","Cantidad"]
                     graficar_oscuro(dc, "Categoría", "Cantidad", "Categoría", "Total", "#E0E0E0")
             st.markdown("---")
             st.subheader("📦 Subcategorías")
             if not df_e_final_graph.empty and "Subcategoría" in df_e_final_graph.columns:
-                 ss = df_e_final_graph["Subcategoría"].astype(str).str.split(',').explode().str.strip().str.capitalize()
+                 ss = df_e_final_graph["Subcategoría"].astype(str).str.split(',').explode().str.strip() # Ya viene limpio
                  ss = ss[ss != "Nan"]; ss = ss[ss != ""]
                  ds = ss.value_counts().reset_index(); ds.columns=["Subcategoría","Cantidad"]
                  graficar_oscuro(ds, "Subcategoría", "Cantidad", "Subcategoría", "Total", "#CCCCCC")
