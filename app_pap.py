@@ -146,7 +146,7 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-# DEFINICIÓN DE PESTAÑAS (AHORA SON 6)
+# DEFINICIÓN DE PESTAÑAS
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "1. Registrar PROYECTO", 
     "2. Carga Masiva ENTREGABLES", 
@@ -157,28 +157,35 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ==========================================
-# PESTAÑA 1
+# PESTAÑA 1 (CORREGIDA: NO BORRA SI HAY ERROR)
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
-    with st.form("form_proyecto", clear_on_submit=True):
+    # CAMBIO: clear_on_submit=False evita que se borre automáticamente
+    with st.form("form_proyecto", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
-        anio = c1.number_input("Año", 2019, 2030, datetime.now().year)
-        periodo = c2.selectbox("Periodo", ["Primavera", "Verano", "Otoño"])
-        cats = c3.multiselect("Categoría(s)", CATEGORIAS_LISTA)
-        nombre = st.text_input("Nombre del Proyecto")
-        desc = st.text_area("Descripción")
+        # Asignamos KEYS para poder limpiarlos manualmente solo cuando queramos
+        anio = c1.number_input("Año", 2019, 2030, datetime.now().year, key="k_anio")
+        periodo = c2.selectbox("Periodo", ["Primavera", "Verano", "Otoño"], key="k_periodo")
+        cats = c3.multiselect("Categoría(s)", CATEGORIAS_LISTA, key="k_cats")
+        
+        nombre = st.text_input("Nombre del Proyecto", key="k_nombre")
+        desc = st.text_area("Descripción", key="k_desc")
+        
         ce, cc = st.columns(2)
-        num_ent = ce.number_input("Estimado Entregables", 1, step=1)
-        comen = cc.text_area("Comentarios")
+        num_ent = ce.number_input("Estimado Entregables", 1, step=1, key="k_num")
+        comen = cc.text_area("Comentarios", key="k_comen")
 
         if st.form_submit_button("💾 Guardar Proyecto"):
-            if not nombre: st.error("Nombre obligatorio")
-            elif not cats: st.error("Elige categoría")
+            # Validación
+            if not nombre: 
+                st.error("⚠️ El nombre es obligatorio. (Tus datos siguen aquí)")
+            elif not cats: 
+                st.error("⚠️ Debes elegir al menos una categoría. (Tus datos siguen aquí)")
             else:
                 df = load_data("Proyectos")
                 if not df.empty and "Nombre del Proyecto" in df.columns and nombre in df["Nombre del Proyecto"].values:
-                    st.warning("⚠️ Ya existe.")
+                    st.warning("⚠️ Ya existe un proyecto con ese nombre.")
                 else:
                     nuevo = {
                         "Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre,
@@ -188,7 +195,17 @@ with tab1:
                         "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
-                    st.success("¡Proyecto guardado!")
+                    st.success("¡Proyecto guardado con éxito!")
+                    
+                    # --- LIMPIEZA MANUAL SOLO SI FUE EXITOSO ---
+                    # Reiniciamos los campos del session_state para dejarlos en blanco
+                    st.session_state.k_nombre = ""
+                    st.session_state.k_desc = ""
+                    st.session_state.k_comen = ""
+                    st.session_state.k_cats = []
+                    # Forzamos recarga para ver los campos vacíos
+                    time.sleep(1)
+                    st.rerun()
 
 # ==========================================
 # PESTAÑA 2
@@ -394,7 +411,7 @@ with tab4:
                 df_chart = pd.concat([pa, ea])
                 base = alt.Chart(df_chart).encode(
                     x=alt.X('Tipo:N', axis=None),
-                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']))
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
                 )
                 bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
                 text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text='Total:Q')
