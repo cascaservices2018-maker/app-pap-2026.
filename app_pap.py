@@ -306,7 +306,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4 (GRÁFICAS - AHORA CON BARRAS ESTILIZADAS Y NÚMEROS)
+# PESTAÑA 4 (GRÁFICAS - CORREGIDAS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -314,7 +314,6 @@ with tab4:
     except: df_p_s = pd.DataFrame(); df_e_s = pd.DataFrame()
 
     if not df_p_s.empty and "Año" in df_p_s.columns:
-        # Filtros
         cats_graph = set()
         if "Categoría" in df_p_s.columns:
             for c in df_p_s["Categoría"].dropna(): cats_graph.update([x.strip().capitalize() for x in str(c).split(',')])
@@ -344,48 +343,52 @@ with tab4:
         if df_f.empty: st.warning("No hay datos con esos filtros.")
         else:
             st.markdown("---")
-            # --- EVOLUCIÓN ANUAL (BARRA ESTILIZADA + NÚMERO) ---
-            st.subheader("📅 Evolución Anual (Proyectos vs Entregables)")
-            p_anios = df_f["Año"].value_counts().reset_index(); p_anios.columns=["Año", "Total"]; p_anios["Tipo"]="Proyectos"
-            
-            visibles = df_f["Nombre del Proyecto"].unique()
-            if not df_e_s.empty:
-                if sub_g: e_validos = df_e_f[df_e_f["Proyecto_Padre"].isin(visibles)]
-                else: e_validos = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
+            # --- NUEVA GRÁFICA EVOLUCIÓN ANUAL ---
+            unique_years = df_f["Año"].nunique()
+            if unique_years > 1:
+                st.subheader("📅 Evolución Anual (Proyectos vs Entregables)")
+                p_anios = df_f["Año"].value_counts().reset_index(); p_anios.columns=["Año", "Total"]; p_anios["Tipo"]="Proyectos"
                 
-                mapa_anios = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
-                e_validos["Año_Real"] = e_validos["Proyecto_Padre"].map(mapa_anios)
-                e_validos = e_validos.dropna(subset=["Año_Real"])
-                e_anios = e_validos["Año_Real"].value_counts().reset_index(); e_anios.columns=["Año", "Total"]; e_anios["Tipo"]="Entregables"
-            else: e_anios = pd.DataFrame()
+                visibles = df_f["Nombre del Proyecto"].unique()
+                if not df_e_s.empty:
+                    if sub_g: e_validos = df_e_f[df_e_f["Proyecto_Padre"].isin(visibles)]
+                    else: e_validos = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
+                    
+                    mapa_anios = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
+                    e_validos["Año_Real"] = e_validos["Proyecto_Padre"].map(mapa_anios)
+                    e_validos = e_validos.dropna(subset=["Año_Real"])
+                    e_anios = e_validos["Año_Real"].value_counts().reset_index(); e_anios.columns=["Año", "Total"]; e_anios["Tipo"]="Entregables"
+                else: e_anios = pd.DataFrame()
 
-            df_chart_anual = pd.concat([p_anios, e_anios], ignore_index=True)
-            
-            if not df_chart_anual.empty:
-                # GRAFICA MEJORADA CON NÚMEROS
-                base = alt.Chart(df_chart_anual).encode(
-                    x=alt.X('Tipo:N', title=None, axis=None),
-                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
-                )
+                df_chart_anual = pd.concat([p_anios, e_anios], ignore_index=True)
                 
-                # Capa 1: Barras estilizadas
-                bars = base.mark_bar(size=35, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-                    y=alt.Y('Total:Q', title='Total')
-                )
-                
-                # Capa 2: Texto con los números (arriba de la barra para que se lea)
-                text = base.mark_text(dy=-10, color='white').encode(
-                    y=alt.Y('Total:Q'),
-                    text=alt.Text('Total:Q')
-                )
-                
-                # Combinamos
-                chart_anual = alt.layer(bars, text).encode(
-                    column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white", titleOrient="bottom", labelOrient="bottom"))
-                ).configure_view(stroke='transparent').properties(height=250)
-                
-                st.altair_chart(chart_anual, use_container_width=True)
-            st.markdown("---")
+                if not df_chart_anual.empty:
+                    # CONFIGURACIÓN CORREGIDA PARA ALTAIR (FACET)
+                    base = alt.Chart(df_chart_anual).encode(
+                        x=alt.X('Tipo:N', title=None, axis=None),
+                        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                    )
+                    
+                    bars = base.mark_bar(size=35, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                        y=alt.Y('Total:Q', title='Total')
+                    )
+                    
+                    text = base.mark_text(dy=-10, color='white').encode(
+                        y=alt.Y('Total:Q'),
+                        text=alt.Text('Total:Q')
+                    )
+                    
+                    # AQUÍ ESTÁ LA CORRECCIÓN: .facet() al final en lugar de .encode(column=...)
+                    chart_anual = alt.layer(bars, text).properties(
+                        height=250
+                    ).facet(
+                        column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white", titleOrient="bottom", labelOrient="bottom"))
+                    ).configure_view(stroke='transparent')
+                    
+                    st.altair_chart(chart_anual, use_container_width=True)
+                st.markdown("---")
+            else:
+                st.info("ℹ️ Registra proyectos en al menos dos años distintos para ver la gráfica de evolución anual.")
             
             # --- KPIs Y OTRAS GRÁFICAS ---
             k1, k2 = st.columns(2)
