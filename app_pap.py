@@ -5,7 +5,7 @@ from streamlit_gsheets import GSheetsConnection
 import io
 import time
 import altair as alt
-import unicodedata # <--- Necesario para quitar acentos al comparar
+import unicodedata
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -42,6 +42,7 @@ st.markdown(estilos_css, unsafe_allow_html=True)
 # ==========================================
 # 📖 DICCIONARIO DE CORRECCIÓN ORTOGRÁFICA
 # ==========================================
+# Aquí definimos las correcciones exactas
 DICCIONARIO_CORRECTO = {
     "gestion": "Gestión",
     "comunicacion": "Comunicación",
@@ -52,10 +53,13 @@ DICCIONARIO_CORRECTO = {
     "financiamiento": "Financiamiento",
     "diseno": "Diseño",
     "arquitectonico": "Arquitectónico",
-    "teatrales": "Teatrales",
-    "memoria/archivo": "Memoria/Archivo",
     "mantenimiento": "Mantenimiento",
-    "productos": "Productos"
+    
+    # CORRECCIÓN SOLICITADA:
+    "teatrales": "Productos teatrales",          # Si escriben solo "teatrales"
+    "productos teatrales": "Productos teatrales", # Si lo escriben con minúsculas
+    "memoria/archivo": "Memoria/Archivo",
+    "memoria": "Memoria/Archivo"
 }
 
 def normalizar_comparacion(texto):
@@ -78,9 +82,9 @@ def limpiar_textos(texto_sucio):
     for p in palabras:
         p_norm = normalizar_comparacion(p)
         encontrado = False
-        # Buscar coincidencia en el diccionario
+        # Buscar coincidencia exacta o parcial en el diccionario
         for error, correccion in DICCIONARIO_CORRECTO.items():
-            if error in p_norm: 
+            if error in p_norm: # "teatrales" está en "mis productos teatrales" -> Lo corrige
                 palabras_corregidas.append(correccion)
                 encontrado = True
                 break
@@ -271,17 +275,16 @@ with tab2:
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
-    st.info("💡 **Nota:** Si ves categorías duplicadas o mal escritas, da clic en el botón 'Actualizar' y se arreglarán solas.")
+    st.info("💡 **Nota:** Si ves categorías duplicadas, da clic en el botón 'Actualizar' y se arreglarán solas.")
     
     df_proy = load_data("Proyectos")
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
-        # Preparación de filtros usando la limpieza visual (sin guardar aún)
+        # Preparación de filtros usando la limpieza visual
         todas_cats = set()
         if "Categoría" in df_proy.columns:
             for c in df_proy["Categoría"].dropna(): 
-                # Usamos limpiar_textos para mostrar opciones limpias en el filtro
                 todas_cats.update([limpiar_textos(x) for x in str(c).split(',')])
         
         todas_subs = set()
@@ -301,13 +304,11 @@ with tab3:
         df_view = df_proy.copy()
         df_ent_view = df_ent.copy() if not df_ent.empty else pd.DataFrame()
 
-        # Filtros con lógica de búsqueda flexible (normalizada)
         if f_nombre: df_view = df_view[df_view["Nombre del Proyecto"].isin(f_nombre)]
         if f_year: df_view = df_view[df_view["Año"].isin(f_year)]
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
         
         if f_cat:
-            # Comparamos la versión limpia de la celda con la selección del filtro
             mask_cat = df_view["Categoría"].apply(lambda x: any(limpiar_textos(c) in f_cat for c in str(x).split(',')))
             df_view = df_view[mask_cat]
         
@@ -316,13 +317,11 @@ with tab3:
             df_ent_view = df_ent_view[mask_sub]
             df_view = df_view[df_view["Nombre del Proyecto"].isin(df_ent_view["Proyecto_Padre"].unique())]
         
-        # --- EDICIÓN PROYECTOS ---
         st.subheader(f"1. Proyectos ({len(df_view)})")
         edited_proy = st.data_editor(df_view, use_container_width=True, key="editor_proyectos_main", num_rows="fixed", column_config={"Categoría": st.column_config.TextColumn("Categoría(s)")})
         
         if st.button("💾 Actualizar Cambios en Proyectos"):
             try:
-                # Limpieza AL GUARDAR
                 if "Categoría" in edited_proy.columns: edited_proy["Categoría"] = edited_proy["Categoría"].apply(limpiar_textos)
                 df_master_proy = load_data("Proyectos")
                 df_master_proy.update(edited_proy)
@@ -332,7 +331,6 @@ with tab3:
 
         st.markdown("---")
 
-        # --- EDICIÓN ENTREGABLES ---
         st.subheader("2. Entregables Asociados")
         if not df_ent.empty:
             if f_sub: 
@@ -344,7 +342,6 @@ with tab3:
                 edited_ent = st.data_editor(df_ent_final, use_container_width=True, key="editor_entregables_main", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
                 if st.button("💾 Actualizar Cambios en Entregables"):
                     try:
-                        # Limpieza AL GUARDAR
                         if "Subcategoría" in edited_ent.columns: edited_ent["Subcategoría"] = edited_ent["Subcategoría"].apply(limpiar_textos)
                         df_master_ent = load_data("Entregables")
                         df_master_ent.update(edited_ent)
@@ -375,13 +372,13 @@ with tab4:
     except: df_p_s = pd.DataFrame(); df_e_s = pd.DataFrame()
 
     if not df_p_s.empty and "Año" in df_p_s.columns:
-        # APLICAMOS LIMPIEZA EN VIVO PARA LAS GRÁFICAS (sin guardar en DB, solo visual)
+        # APLICAMOS LIMPIEZA EN VIVO PARA LAS GRÁFICAS
         if "Categoría" in df_p_s.columns:
             df_p_s["Categoría"] = df_p_s["Categoría"].apply(limpiar_textos)
         if not df_e_s.empty and "Subcategoría" in df_e_s.columns:
             df_e_s["Subcategoría"] = df_e_s["Subcategoría"].apply(limpiar_textos)
 
-        # Preparación de filtros (usando datos ya limpios)
+        # Preparación de filtros
         cats_graph = set()
         for c in df_p_s["Categoría"].dropna(): 
             cats_graph.update([x.strip() for x in str(c).split(',') if x.strip()])
@@ -412,58 +409,45 @@ with tab4:
         if df_f.empty: st.warning("No hay datos con esos filtros.")
         else:
             st.markdown("---")
-            # --- NUEVA GRÁFICA EVOLUCIÓN ANUAL ---
-            unique_years = df_f["Año"].nunique()
-            if unique_years > 1:
-                st.subheader("📅 Evolución Anual (Proyectos vs Entregables)")
-                p_anios = df_f["Año"].value_counts().reset_index(); p_anios.columns=["Año", "Total"]; p_anios["Tipo"]="Proyectos"
-                
-                visibles = df_f["Nombre del Proyecto"].unique()
-                if not df_e_s.empty:
-                    if sub_g: e_validos = df_e_f[df_e_f["Proyecto_Padre"].isin(visibles)]
-                    else: e_validos = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
-                    
-                    mapa_anios = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
-                    e_validos["Año_Real"] = e_validos["Proyecto_Padre"].map(mapa_anios)
-                    e_validos = e_validos.dropna(subset=["Año_Real"])
-                    e_anios = e_validos["Año_Real"].value_counts().reset_index(); e_anios.columns=["Año", "Total"]; e_anios["Tipo"]="Entregables"
-                else: e_anios = pd.DataFrame()
-
-                df_chart_anual = pd.concat([p_anios, e_anios], ignore_index=True)
-                
-                if not df_chart_anual.empty:
-                    base = alt.Chart(df_chart_anual).encode(
-                        x=alt.X('Tipo:N', title=None, axis=None),
-                        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
-                    )
-                    
-                    bars = base.mark_bar(size=35, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-                        y=alt.Y('Total:Q', title='Total')
-                    )
-                    
-                    text = base.mark_text(dy=-10, color='white').encode(
-                        y=alt.Y('Total:Q'),
-                        text=alt.Text('Total:Q')
-                    )
-                    
-                    chart_anual = alt.layer(bars, text).properties(
-                        height=250
-                    ).facet(
-                        column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white", titleOrient="bottom", labelOrient="bottom"))
-                    ).configure_view(stroke='transparent')
-                    
-                    st.altair_chart(chart_anual, use_container_width=True)
-                st.markdown("---")
-            else:
-                st.info("ℹ️ Registra proyectos en al menos dos años distintos para ver la gráfica de evolución anual.")
+            st.subheader("📅 Evolución Anual (Proyectos vs Entregables)")
             
+            p_anios = df_f["Año"].value_counts().reset_index(); p_anios.columns=["Año", "Total"]; p_anios["Tipo"]="Proyectos"
+            visibles = df_f["Nombre del Proyecto"].unique()
+            
+            if not df_e_s.empty:
+                if sub_g: e_validos = df_e_f[df_e_f["Proyecto_Padre"].isin(visibles)]
+                else: e_validos = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
+                
+                mapa_anios = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
+                e_validos["Año_Real"] = e_validos["Proyecto_Padre"].map(mapa_anios)
+                e_validos = e_validos.dropna(subset=["Año_Real"])
+                e_anios = e_validos["Año_Real"].value_counts().reset_index(); e_anios.columns=["Año", "Total"]; e_anios["Tipo"]="Entregables"
+            else: e_anios = pd.DataFrame()
+
+            df_chart_anual = pd.concat([p_anios, e_anios], ignore_index=True)
+            
+            if not df_chart_anual.empty:
+                base = alt.Chart(df_chart_anual).encode(
+                    x=alt.X('Tipo:N', title=None, axis=None),
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                )
+                bars = base.mark_bar(size=35, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(y=alt.Y('Total:Q', title='Total'))
+                text = base.mark_text(dy=-10, color='white').encode(y=alt.Y('Total:Q'), text=alt.Text('Total:Q'))
+                
+                chart_anual = alt.layer(bars, text).properties(height=250).facet(
+                    column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white", titleOrient="bottom", labelOrient="bottom"))
+                ).configure_view(stroke='transparent')
+                
+                st.altair_chart(chart_anual, use_container_width=True)
+            
+            st.markdown("---")
             # --- KPIs Y OTRAS GRÁFICAS ---
             k1, k2 = st.columns(2)
             k1.metric("Proyectos Filtrados", len(df_f))
             
             visibles = df_f["Nombre del Proyecto"].unique()
             if not df_e_s.empty:
-                if not sub_g: df_e_final_graph = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
+                if sub_g: df_e_final_graph = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
                 else: df_e_final_graph = df_e_f[df_e_f["Proyecto_Padre"].isin(visibles)]
             else: df_e_final_graph = pd.DataFrame()
 
