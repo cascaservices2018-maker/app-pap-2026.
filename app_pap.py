@@ -4,6 +4,7 @@ from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 import io
 import time
+import altair as alt # <--- IMPORTANTE: Para las gráficas bonitas
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -16,20 +17,20 @@ st.set_page_config(
 # ==========================================
 # 🎨 PERSONALIZACIÓN DE COLORES (CSS)
 # ==========================================
-# Puedes cambiar estos códigos HEX por los que tú quieras.
-# Buscador de colores: https://htmlcolorcodes.com/es/
-COLOR_FONDO_PRINCIPAL = "#A60000"  # Gris oscuro elegante (Default Streamlit Dark)
-COLOR_BARRA_LATERAL = "#262730"    # Un poco más claro para distinguir
+COLOR_FONDO_PRINCIPAL = "#A60000"  # Rojo Institucional
+COLOR_BARRA_LATERAL = "#262730"    # Gris oscuro
 
 estilos_css = f"""
 <style>
-    /* Color de fondo principal */
     .stApp {{
         background-color: {COLOR_FONDO_PRINCIPAL};
     }}
-    /* Color de la barra lateral */
     [data-testid="stSidebar"] {{
         background-color: {COLOR_BARRA_LATERAL};
+    }}
+    /* Forzar color blanco en textos de métricas y títulos para contraste */
+    [data-testid="stMetricValue"], h1, h2, h3 {{
+        color: white !important;
     }}
 </style>
 """
@@ -73,7 +74,25 @@ def save_data(df, sheet_name):
     except Exception as e:
         st.error(f"No se pudo guardar: {e}")
 
-# --- BARRA LATERAL (SIDEBAR) CON LOGO GRANDE ---
+# --- FUNCIÓN PARA GRÁFICAS OSCURAS (ALTAIR) ---
+def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF"):
+    """Crea una gráfica de barras que se ve bien en fondo rojo"""
+    chart = alt.Chart(df).mark_bar(color=color_barra).encode(
+        x=alt.X(x_col, title=titulo_x, sort='-y'),
+        y=alt.Y(y_col, title=titulo_y),
+        tooltip=[x_col, y_col]
+    ).configure_axis(
+        labelColor='white', # Ejes blancos
+        titleColor='white', # Títulos blancos
+        gridColor='#660000' # Líneas de guía rojas oscuras sutiles
+    ).configure_view(
+        strokeWidth=0
+    ).properties(
+        height=300
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+# --- BARRA LATERAL (SIDEBAR) ---
 with st.sidebar:
     st.image(LOGO_URL, width=280) 
     st.markdown("### ⚙️ Panel de Control")
@@ -81,7 +100,7 @@ with st.sidebar:
     st.markdown("---")
     st.write("Bienvenido al sistema colaborativo.")
 
-# --- ENCABEZADO PRINCIPAL (HEADER) CON LOGO GRANDE ---
+# --- ENCABEZADO PRINCIPAL ---
 col_logo, col_titulo = st.columns([2, 8])
 
 with col_logo:
@@ -314,7 +333,7 @@ with tab3:
         st.info("Cargando base de datos...")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS
+# PESTAÑA 4: GRÁFICAS (MEJORADAS PARA FONDO ROJO)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -357,21 +376,32 @@ with tab4:
                 col_kpi2.metric("Entregables", 0)
 
             st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
+            c1, c2 = st.columns(2)
+            
+            with c1:
                 st.subheader("Por Periodo")
-                st.bar_chart(df_filtered["Periodo"].value_counts())
-            with col2:
+                data_periodo = df_filtered["Periodo"].value_counts().reset_index()
+                data_periodo.columns = ["Periodo", "Cantidad"]
+                # Barras blancas para resaltar en fondo rojo
+                graficar_oscuro(data_periodo, "Periodo", "Cantidad", "Periodo", "Total", "#FFFFFF")
+
+            with c2:
                 st.subheader("Por Categoría")
                 if "Categoría" in df_filtered.columns:
                     series_cat = df_filtered["Categoría"].astype(str).str.split(',').explode().str.strip()
-                    st.bar_chart(series_cat.value_counts())
+                    data_cat = series_cat.value_counts().reset_index()
+                    data_cat.columns = ["Categoría", "Cantidad"]
+                    # Barras gris claro
+                    graficar_oscuro(data_cat, "Categoría", "Cantidad", "Categoría", "Total", "#E0E0E0")
                 
             st.markdown("---")
             st.subheader("📦 Subcategorías (Desglosadas)")
             if not df_e_filtered.empty and "Subcategoría" in df_e_filtered.columns:
                  series_sub = df_e_filtered["Subcategoría"].astype(str).str.split(',').explode().str.strip()
-                 st.bar_chart(series_sub.value_counts())
+                 data_sub = series_sub.value_counts().reset_index()
+                 data_sub.columns = ["Subcategoría", "Cantidad"]
+                 # Barras un poco más oscuras para variedad
+                 graficar_oscuro(data_sub, "Subcategoría", "Cantidad", "Subcategoría", "Total", "#CCCCCC")
     else:
         st.info("Cargando gráficas...")
 
