@@ -4,7 +4,7 @@ from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 import io
 import time
-import altair as alt # <--- IMPORTANTE: Para las gráficas bonitas
+import altair as alt
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -104,7 +104,7 @@ with st.sidebar:
 col_logo, col_titulo = st.columns([2, 8])
 
 with col_logo:
-    st.image(LOGO_URL, width=200) 
+    st.image(LOGO_URL, width=170) 
 with col_titulo:
     st.title("Base de datos PAP PERIODOS 2019-2026")
 
@@ -245,7 +245,7 @@ with tab2:
                         st.error(f"Error al guardar: {e}")
 
 # ==========================================
-# PESTAÑA 3: BUSCAR Y EDITAR
+# PESTAÑA 3: BUSCAR Y EDITAR (¡CON FILTROS AVANZADOS!)
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
@@ -255,18 +255,57 @@ with tab3:
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
-        c1, c2 = st.columns(2)
-        with c1:
-            years = sorted(df_proy["Año"].unique())
-            f_year = st.multiselect("Filtrar por Año:", years)
-        with c2:
-            f_period = st.multiselect("Filtrar por Periodo:", ["Primavera", "Verano", "Otoño"])
+        # --- PREPARAR LISTAS DE FILTROS ---
+        # Extraemos todas las categorías únicas (separando por comas)
+        todas_cats = set()
+        if "Categoría" in df_proy.columns:
+            for c in df_proy["Categoría"].dropna():
+                todas_cats.update([x.strip() for x in str(c).split(',')])
+        
+        # Extraemos todas las subcategorías únicas de los entregables
+        todas_subs = set()
+        if not df_ent.empty and "Subcategoría" in df_ent.columns:
+            for s in df_ent["Subcategoría"].dropna():
+                todas_subs.update([x.strip() for x in str(s).split(',')])
 
+        # --- INTERFAZ DE FILTROS (4 Columnas) ---
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            f_year = st.multiselect("Filtrar Año:", sorted(df_proy["Año"].unique()))
+        with c2:
+            f_period = st.multiselect("Filtrar Periodo:", ["Primavera", "Verano", "Otoño"])
+        with c3:
+            f_cat = st.multiselect("Filtrar Categoría:", sorted(list(todas_cats)))
+        with c4:
+            f_sub = st.multiselect("Filtrar Subcategoría:", sorted(list(todas_subs)))
+
+        # --- APLICAR LÓGICA DE FILTRADO ---
         df_view = df_proy.copy()
+        df_ent_view = df_ent.copy() if not df_ent.empty else pd.DataFrame()
+
+        # 1. Filtros básicos de Proyecto
         if f_year: df_view = df_view[df_view["Año"].isin(f_year)]
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
+        
+        # 2. Filtro de Categoría (Búsqueda inteligente dentro del texto "A, B")
+        if f_cat:
+            # Lambda: Revisa si alguna de las categorías seleccionadas está en la celda
+            mask_cat = df_view["Categoría"].apply(lambda x: any(item in [c.strip() for c in str(x).split(',')] for item in f_cat))
+            df_view = df_view[mask_cat]
 
-        st.subheader("1. Proyectos")
+        # 3. Filtro de Subcategoría (Afecta a Entregables y REPERCUTE en Proyectos)
+        if f_sub and not df_ent_view.empty:
+            # Primero filtramos los entregables que cumplen con la subcategoría
+            mask_sub = df_ent_view["Subcategoría"].apply(lambda x: any(item in [s.strip() for s in str(x).split(',')] for item in f_sub))
+            df_ent_view = df_ent_view[mask_sub]
+            
+            # Ahora, solo mostramos los proyectos que tienen esos entregables
+            proyectos_con_sub = df_ent_view["Proyecto_Padre"].unique()
+            df_view = df_view[df_view["Nombre del Proyecto"].isin(proyectos_con_sub)]
+        
+        # --- MOSTRAR TABLAS ---
+
+        st.subheader(f"1. Proyectos ({len(df_view)})")
         edited_proy = st.data_editor(
             df_view,
             use_container_width=True,
@@ -285,55 +324,68 @@ with tab3:
 
         st.markdown("---")
 
-        st.subheader("2. Entregables")
-        if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
-            visible_projects = df_view["Nombre del Proyecto"].unique()
-            df_ent_view = df_ent[df_ent["Proyecto_Padre"].isin(visible_projects)]
+        st.subheader("2. Entregables Asociados")
+        # Filtramos entregables para que coincidan con los proyectos visibles
+        if not df_ent.empty:
+            if f_sub:
+                # Si ya filtramos por subcategoría, df_ent_view ya está filtrado, solo aseguramos que el padre sea visible
+                df_ent_final = df_ent_view[df_ent_view["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
+            else:
+                # Si no hay filtro de subcategoría, mostramos todos los entregables de los proyectos visibles
+                df_ent_final = df_ent[df_ent["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
             
-            edited_ent = st.data_editor(
-                df_ent_view,
-                use_container_width=True,
-                key="editor_entregables_main",
-                num_rows="fixed",
-                column_config={
-                    "Subcategoría": st.column_config.TextColumn("Subcategoría"),
-                    "Entregable": st.column_config.TextColumn("Nombre Entregable"),
-                    "Contenido": st.column_config.TextColumn("Contenido", width="large")
-                }
-            )
-            
-            if st.button("💾 Actualizar Cambios en Entregables"):
-                try:
-                    df_master_ent = load_data("Entregables")
-                    df_master_ent.update(edited_ent)
-                    save_data(df_master_ent, "Entregables")
-                    st.success("✅ Entregables actualizados.")
-                except Exception as e:
-                    st.error(f"Error al actualizar: {e}")
+            if not df_ent_final.empty:
+                edited_ent = st.data_editor(
+                    df_ent_final,
+                    use_container_width=True,
+                    key="editor_entregables_main",
+                    num_rows="fixed",
+                    column_config={
+                        "Subcategoría": st.column_config.TextColumn("Subcategoría"),
+                        "Entregable": st.column_config.TextColumn("Nombre Entregable"),
+                        "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                    }
+                )
+                
+                if st.button("💾 Actualizar Cambios en Entregables"):
+                    try:
+                        df_master_ent = load_data("Entregables")
+                        df_master_ent.update(edited_ent)
+                        save_data(df_master_ent, "Entregables")
+                        st.success("✅ Entregables actualizados.")
+                    except Exception as e:
+                        st.error(f"Error al actualizar: {e}")
+            else:
+                 st.info("No hay entregables que coincidan con estos filtros.")
         else:
-            st.info("No hay entregables para los proyectos seleccionados.")
+            st.info("No hay base de datos de entregables.")
 
         st.markdown("---")
         
         with st.expander("🗑️ Zona de Borrado (Peligro)"):
             st.warning("Esto borra el proyecto y TODOS sus entregables.")
-            to_del = st.selectbox("Proyecto a eliminar:", df_proy["Nombre del Proyecto"].unique())
-            
-            if st.button("Eliminar Definitivamente"):
-                df_proy_new = df_proy[df_proy["Nombre del Proyecto"] != to_del]
-                if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
-                    df_ent_new = df_ent[df_ent["Proyecto_Padre"] != to_del]
-                    save_data(df_ent_new, "Entregables")
+            # Solo permitimos borrar proyectos que se ven en la tabla filtrada
+            opciones_borrar = df_view["Nombre del Proyecto"].unique()
+            if len(opciones_borrar) > 0:
+                to_del = st.selectbox("Proyecto a eliminar:", opciones_borrar)
                 
-                save_data(df_proy_new, "Proyectos")
-                st.success(f"Proyecto '{to_del}' eliminado.")
-                time.sleep(1)
-                st.rerun()
+                if st.button("Eliminar Definitivamente"):
+                    df_proy_new = df_proy[df_proy["Nombre del Proyecto"] != to_del]
+                    if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
+                        df_ent_new = df_ent[df_ent["Proyecto_Padre"] != to_del]
+                        save_data(df_ent_new, "Entregables")
+                    
+                    save_data(df_proy_new, "Proyectos")
+                    st.success(f"Proyecto '{to_del}' eliminado.")
+                    time.sleep(1)
+                    st.rerun()
+            else:
+                st.write("No hay proyectos visibles para borrar.")
     else:
         st.info("Cargando base de datos...")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (MEJORADAS PARA FONDO ROJO)
+# PESTAÑA 4: GRÁFICAS
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -382,7 +434,6 @@ with tab4:
                 st.subheader("Por Periodo")
                 data_periodo = df_filtered["Periodo"].value_counts().reset_index()
                 data_periodo.columns = ["Periodo", "Cantidad"]
-                # Barras blancas para resaltar en fondo rojo
                 graficar_oscuro(data_periodo, "Periodo", "Cantidad", "Periodo", "Total", "#FFFFFF")
 
             with c2:
@@ -391,7 +442,6 @@ with tab4:
                     series_cat = df_filtered["Categoría"].astype(str).str.split(',').explode().str.strip()
                     data_cat = series_cat.value_counts().reset_index()
                     data_cat.columns = ["Categoría", "Cantidad"]
-                    # Barras gris claro
                     graficar_oscuro(data_cat, "Categoría", "Cantidad", "Categoría", "Total", "#E0E0E0")
                 
             st.markdown("---")
@@ -400,7 +450,6 @@ with tab4:
                  series_sub = df_e_filtered["Subcategoría"].astype(str).str.split(',').explode().str.strip()
                  data_sub = series_sub.value_counts().reset_index()
                  data_sub.columns = ["Subcategoría", "Cantidad"]
-                 # Barras un poco más oscuras para variedad
                  graficar_oscuro(data_sub, "Subcategoría", "Cantidad", "Subcategoría", "Total", "#CCCCCC")
     else:
         st.info("Cargando gráficas...")
@@ -430,5 +479,3 @@ with tab5:
                 )
             except Exception as e:
                 st.error(f"Error: {e}")
-
-
