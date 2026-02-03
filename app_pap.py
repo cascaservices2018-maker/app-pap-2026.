@@ -6,7 +6,16 @@ import io
 import time
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Gestión PAP - Nube", layout="wide", page_icon="☁️")
+st.set_page_config(
+    page_title="Gestión PAP - Nube", 
+    layout="wide", 
+    page_icon="☁️",
+    initial_sidebar_state="expanded"
+)
+
+# --- TU LOGO AQUÍ ---
+# Puedes cambiar este link por el de tu universidad o subir una imagen a GitHub
+LOGO_URL = "https://cdn-icons-png.flaticon.com/512/1087/1087815.png"
 
 # --- LISTAS FIJAS ---
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
@@ -17,7 +26,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- FUNCIÓN DE CARGA INTELIGENTE (TTL=5) ---
 def load_data(sheet_name):
     try:
-        # ttl=5: Memoria de 5 segundos para no saturar a Google
         df = conn.read(worksheet=sheet_name, ttl=5)
         if not df.empty:
             df.columns = df.columns.str.strip()
@@ -40,10 +48,26 @@ def save_data(df, sheet_name):
     except Exception as e:
         st.error(f"No se pudo guardar: {e}")
 
-# --- TÍTULO ---
-st.title("☁️ Sistema PAP: Colaborativo")
+# --- BARRA LATERAL (SIDEBAR) CON LOGO ---
+with st.sidebar:
+    st.image(LOGO_URL, width=150) # Logo en la barra lateral
+    st.markdown("### ⚙️ Panel de Control")
+    st.info("Sistema de Gestión de Proyectos PAP - 2026")
+    st.markdown("---")
+    st.write("Bienvenido al sistema colaborativo.")
+
+# --- ENCABEZADO PRINCIPAL (HEADER) ---
+# Creamos dos columnas: una pequeña para el logo y otra para el título
+col_logo, col_titulo = st.columns([1, 8])
+
+with col_logo:
+    st.image(LOGO_URL, width=80) # Logo pequeño arriba
+with col_titulo:
+    st.title("Sistema PAP: Colaborativo")
+
 st.markdown("---")
 
+# --- PESTAÑAS DEL SISTEMA ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "1. Registrar PROYECTO", 
     "2. Carga Masiva ENTREGABLES", 
@@ -53,7 +77,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ==========================================
-# PESTAÑA 1: REGISTRO DE PROYECTOS (¡AHORA CON MULTI-CATEGORÍA!)
+# PESTAÑA 1: REGISTRO DE PROYECTOS
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
@@ -64,7 +88,6 @@ with tab1:
         with col2:
             periodo = st.selectbox("Periodo", ["Primavera", "Verano", "Otoño"])
         with col3:
-            # CAMBIO: st.multiselect en lugar de st.selectbox
             cats_seleccionadas = st.multiselect("Categoría(s)", CATEGORIAS_LISTA)
 
         nombre_proyecto = st.text_input("Nombre del Proyecto")
@@ -86,13 +109,11 @@ with tab1:
                 if not df_proy.empty and "Nombre del Proyecto" in df_proy.columns and nombre_proyecto in df_proy["Nombre del Proyecto"].values:
                      st.warning("⚠️ Ya existe un proyecto con ese nombre.")
                 else:
-                    # Unimos las categorías con comas para guardarlas en una sola celda
                     categoria_str = ", ".join(cats_seleccionadas)
-
                     nuevo = {
                         "Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre_proyecto,
                         "Descripción": descripcion, "Num_Entregables": num_entregables,
-                        "Categoría": categoria_str, # Guardamos "Gestión, Comunicación"
+                        "Categoría": categoria_str,
                         "Comentarios": comentarios,
                         "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
@@ -116,14 +137,12 @@ with tab2:
             lista_proyectos = sorted(df_p["Nombre del Proyecto"].unique().tolist())
             proyecto_sel = st.selectbox("Selecciona el Proyecto:", lista_proyectos)
             
-            # Datos del proyecto
             info_proyecto = df_p[df_p["Nombre del Proyecto"] == proyecto_sel].iloc[0]
             cat_auto = info_proyecto.get("Categoría", "General")
             num_estimado = int(info_proyecto.get("Num_Entregables", 5))
             
             st.caption(f"Categoría(s): **{cat_auto}** | Espacios generados: **{num_estimado}**")
 
-            # Session State
             session_key = f"data_editor_{proyecto_sel}"
 
             if session_key not in st.session_state:
@@ -193,7 +212,6 @@ with tab3:
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
-        # Filtros
         c1, c2 = st.columns(2)
         with c1:
             years = sorted(df_proy["Año"].unique())
@@ -205,7 +223,6 @@ with tab3:
         if f_year: df_view = df_view[df_view["Año"].isin(f_year)]
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
 
-        # --- SECCIÓN PROYECTOS ---
         st.subheader("1. Proyectos")
         edited_proy = st.data_editor(
             df_view,
@@ -225,7 +242,6 @@ with tab3:
 
         st.markdown("---")
 
-        # --- SECCIÓN ENTREGABLES ---
         st.subheader("2. Entregables")
         if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
             visible_projects = df_view["Nombre del Proyecto"].unique()
@@ -274,7 +290,7 @@ with tab3:
         st.info("Cargando base de datos...")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (¡MEJORADA PARA MULTI-CATEGORÍA!)
+# PESTAÑA 4: GRÁFICAS
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -323,7 +339,6 @@ with tab4:
                 st.bar_chart(df_filtered["Periodo"].value_counts())
             with col2:
                 st.subheader("Por Categoría")
-                # LÓGICA MEJORADA: Separa las categorías si hay comas
                 if "Categoría" in df_filtered.columns:
                     series_cat = df_filtered["Categoría"].astype(str).str.split(',').explode().str.strip()
                     st.bar_chart(series_cat.value_counts())
