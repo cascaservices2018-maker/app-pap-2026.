@@ -14,16 +14,14 @@ CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigaci
 # --- CONEXIÓN A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNCIÓN DE CARGA INTELIGENTE (Con memoria de 5 segundos) ---
+# --- FUNCIÓN DE CARGA INTELIGENTE (TTL=5) ---
 def load_data(sheet_name):
     try:
-        # CAMBIO CLAVE: ttl=5 (Guarda en memoria 5 segundos para no bloquear Google)
         df = conn.read(worksheet=sheet_name, ttl=5)
         if not df.empty:
             df.columns = df.columns.str.strip()
         return df
     except Exception as e:
-        # Si falla por bloqueo, esperamos un poquito y reintentamos una vez
         try:
             time.sleep(2)
             df = conn.read(worksheet=sheet_name, ttl=5)
@@ -31,13 +29,12 @@ def load_data(sheet_name):
                  df.columns = df.columns.str.strip()
             return df
         except:
-            st.error(f"🚨 Error de conexión o bloqueo de Google. Espera 1 minuto y recarga.")
+            st.error(f"🚨 Error de conexión. Espera un poco y recarga la página.")
             return pd.DataFrame()
 
 def save_data(df, sheet_name):
     try:
         conn.update(worksheet=sheet_name, data=df)
-        # Limpiamos caché forzoso para ver los cambios inmediatos
         st.cache_data.clear()
     except Exception as e:
         st.error(f"No se pudo guardar: {e}")
@@ -49,7 +46,7 @@ st.markdown("---")
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "1. Registrar PROYECTO", 
     "2. Carga Masiva ENTREGABLES", 
-    "3. 🔍 Buscar / Eliminar",
+    "3. 📝 Buscar y Editar", # ¡Nombre actualizado!
     "4. 📊 Gráficas",
     "5. 📥 Descargar Excel"
 ])
@@ -96,7 +93,7 @@ with tab1:
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (OPTIMIZADA)
+# PESTAÑA 2: CARGA MASIVA
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida de Entregables")
@@ -105,7 +102,7 @@ with tab2:
     df_p = load_data("Proyectos")
     
     if df_p.empty:
-        st.warning("Esperando conexión con base de datos...")
+        st.warning("Cargando proyectos...")
     else:
         if "Nombre del Proyecto" in df_p.columns:
             lista_proyectos = sorted(df_p["Nombre del Proyecto"].unique().tolist())
@@ -118,7 +115,7 @@ with tab2:
             
             st.caption(f"Categoría: **{cat_auto}** | Espacios generados: **{num_estimado}**")
 
-            # --- USO DE SESSION STATE PARA EVITAR RECARGAS ---
+            # Session State
             session_key = f"data_editor_{proyecto_sel}"
 
             if session_key not in st.session_state:
@@ -135,11 +132,7 @@ with tab2:
                 key=f"editor_widget_{proyecto_sel}",
                 use_container_width=True, 
                 column_config={
-                    "Subcategorías": st.column_config.TextColumn(
-                        "Subcategoría(s)",
-                        help="Ej: Vinculación, Financiamiento",
-                        default="General"
-                    ),
+                    "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", default="General"),
                     "Nombre_Entregable": st.column_config.TextColumn("Nombre Entregable", required=True),
                     "Contenido": st.column_config.TextColumn("Contenido", width="large"),
                     "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
@@ -182,49 +175,103 @@ with tab2:
                         st.error(f"Error al guardar: {e}")
 
 # ==========================================
-# PESTAÑA 3: BUSCAR / ELIMINAR
+# PESTAÑA 3: BUSCAR Y EDITAR (¡NUEVO!)
 # ==========================================
 with tab3:
-    st.header("Base de Datos en Vivo")
+    st.header("📝 Edición de Base de Datos")
+    st.info("Haz doble clic en cualquier celda para corregirla. Al terminar, presiona el botón 'Actualizar' correspondiente.")
+    
     df_proy = load_data("Proyectos")
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
+        # --- FILTROS ---
         c1, c2 = st.columns(2)
         with c1:
             years = sorted(df_proy["Año"].unique())
-            f_year = st.multiselect("Año:", years)
+            f_year = st.multiselect("Filtrar por Año:", years)
         with c2:
-            f_period = st.multiselect("Periodo:", ["Primavera", "Verano", "Otoño"])
+            f_period = st.multiselect("Filtrar por Periodo:", ["Primavera", "Verano", "Otoño"])
 
+        # Aplicar filtros
         df_view = df_proy.copy()
         if f_year: df_view = df_view[df_view["Año"].isin(f_year)]
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
 
-        st.markdown("### Proyectos")
-        st.dataframe(df_view, use_container_width=True) 
+        # --- SECCIÓN PROYECTOS ---
+        st.subheader("1. Proyectos")
         
-        st.markdown("### Entregables Vinculados")
+        # Tabla Editable de Proyectos
+        edited_proy = st.data_editor(
+            df_view,
+            use_container_width=True,
+            key="editor_proyectos_main",
+            num_rows="fixed" # No permitimos agregar/borrar filas aquí para no romper índices
+        )
+        
+        if st.button("💾 Actualizar Cambios en Proyectos"):
+            try:
+                # Cargamos la versión más reciente de la nube
+                df_master_proy = load_data("Proyectos")
+                # Actualizamos solo las filas modificadas usando los índices
+                df_master_proy.update(edited_proy)
+                save_data(df_master_proy, "Proyectos")
+                st.success("✅ Proyectos actualizados correctamente.")
+            except Exception as e:
+                st.error(f"Error al actualizar: {e}")
+
+        st.markdown("---")
+
+        # --- SECCIÓN ENTREGABLES ---
+        st.subheader("2. Entregables")
+        
         if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
             visible_projects = df_view["Nombre del Proyecto"].unique()
             df_ent_view = df_ent[df_ent["Proyecto_Padre"].isin(visible_projects)]
-            st.dataframe(df_ent_view, use_container_width=True)
+            
+            # Tabla Editable de Entregables
+            edited_ent = st.data_editor(
+                df_ent_view,
+                use_container_width=True,
+                key="editor_entregables_main",
+                num_rows="fixed", # Solo edición de contenido
+                column_config={
+                    "Subcategoría": st.column_config.TextColumn("Subcategoría"),
+                    "Entregable": st.column_config.TextColumn("Nombre Entregable"),
+                    "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                }
+            )
+            
+            if st.button("💾 Actualizar Cambios en Entregables"):
+                try:
+                    df_master_ent = load_data("Entregables")
+                    df_master_ent.update(edited_ent)
+                    save_data(df_master_ent, "Entregables")
+                    st.success("✅ Entregables actualizados correctamente.")
+                except Exception as e:
+                    st.error(f"Error al actualizar: {e}")
         else:
-            st.info("No hay entregables aún.")
+            st.info("No hay entregables para los proyectos seleccionados.")
 
         st.markdown("---")
-        with st.expander("🗑️ Zona de Borrado"):
+        
+        # --- ZONA DE BORRADO ---
+        with st.expander("🗑️ Zona de Borrado (Peligro)"):
+            st.warning("Esto borra el proyecto y TODOS sus entregables.")
             to_del = st.selectbox("Proyecto a eliminar:", df_proy["Nombre del Proyecto"].unique())
+            
             if st.button("Eliminar Definitivamente"):
                 df_proy_new = df_proy[df_proy["Nombre del Proyecto"] != to_del]
                 if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
                     df_ent_new = df_ent[df_ent["Proyecto_Padre"] != to_del]
                     save_data(df_ent_new, "Entregables")
+                
                 save_data(df_proy_new, "Proyectos")
-                st.success("Eliminado.")
+                st.success(f"Proyecto '{to_del}' eliminado.")
+                time.sleep(1)
                 st.rerun()
     else:
-        st.info("Cargando datos...")
+        st.info("Cargando base de datos...")
 
 # ==========================================
 # PESTAÑA 4: GRÁFICAS
