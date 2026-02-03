@@ -66,7 +66,6 @@ with tab1:
                 st.error("El nombre es obligatorio")
             else:
                 df_proy = load_data("Proyectos")
-                # Validación de duplicados
                 if not df_proy.empty and "Nombre del Proyecto" in df_proy.columns and nombre_proyecto in df_proy["Nombre del Proyecto"].values:
                      st.warning("⚠️ Ya existe un proyecto con ese nombre.")
                 else:
@@ -81,7 +80,7 @@ with tab1:
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA
+# PESTAÑA 2: CARGA MASIVA (SOLUCIÓN BORRADO)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida de Entregables")
@@ -103,32 +102,40 @@ with tab2:
             
             st.caption(f"Categoría: **{cat_auto}** | Espacios generados: **{num_estimado}**")
 
-            # Tabla Editable
-            plantilla_data = pd.DataFrame(
-                index=range(num_estimado), 
-                columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]
-            )
-            
+            # --- CORRECCIÓN CLAVE: USO DE SESSION STATE ---
+            # Creamos una llave única para este proyecto
+            session_key = f"data_editor_{proyecto_sel}"
+
+            # Solo creamos la tabla vacía SI NO EXISTE ya en la memoria
+            if session_key not in st.session_state:
+                st.session_state[session_key] = pd.DataFrame(
+                    index=range(num_estimado), 
+                    columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]
+                )
+
             st.write("👇 **Llena la tabla:**")
             
+            # Le pasamos la tabla guardada en memoria, no una nueva
             edited_df = st.data_editor(
-                plantilla_data,
+                st.session_state[session_key],
                 num_rows="dynamic",
-                use_container_width=True,
+                key=f"editor_widget_{proyecto_sel}",
+                # Aquí arreglamos el error rojo width='stretch'
+                width=None, 
                 column_config={
                     "Subcategorías": st.column_config.TextColumn(
                         "Subcategoría(s)",
-                        help="Ej: Vinculación, Financiamiento (Separadas por coma)",
+                        help="Ej: Vinculación, Financiamiento",
                         default="General"
                     ),
                     "Nombre_Entregable": st.column_config.TextColumn("Nombre Entregable", required=True),
-                    "Contenido": st.column_config.TextColumn("Contenido/Descripción", width="large"),
+                    "Contenido": st.column_config.TextColumn("Contenido", width="large"),
                     "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
-                },
-                key=f"editor_{proyecto_sel}"
+                }
             )
 
             if st.button("🚀 Guardar Todos los Entregables"):
+                # Filtramos vacíos
                 datos_validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
                 
                 if datos_validos.empty:
@@ -154,7 +161,15 @@ with tab2:
                         df_final = pd.concat([df_ent_cloud, pd.DataFrame(nuevas_filas)], ignore_index=True)
                         save_data(df_final, "Entregables")
                         st.success(f"¡Éxito! Se guardaron {len(nuevas_filas)} entregables.")
+                        
+                        # Limpiamos la memoria para que la tabla se vacíe tras guardar
+                        del st.session_state[session_key]
                         st.balloons()
+                        # Forzamos recarga para ver la tabla limpia
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                        
                     except Exception as e:
                         st.error(f"Error al guardar: {e}")
 
@@ -179,13 +194,14 @@ with tab3:
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
 
         st.markdown("### Proyectos")
-        st.dataframe(df_view, use_container_width=True)
+        # Corrección del error rojo
+        st.dataframe(df_view, width=None) 
         
         st.markdown("### Entregables Vinculados")
         if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
             visible_projects = df_view["Nombre del Proyecto"].unique()
             df_ent_view = df_ent[df_ent["Proyecto_Padre"].isin(visible_projects)]
-            st.dataframe(df_ent_view, use_container_width=True)
+            st.dataframe(df_ent_view, width=None)
         else:
             st.info("No hay entregables aún.")
 
@@ -201,7 +217,7 @@ with tab3:
                 st.success("Eliminado.")
                 st.rerun()
     else:
-        st.info("No se encontraron datos de proyectos.")
+        st.info("No se encontraron datos.")
 
 # ==========================================
 # PESTAÑA 4: GRÁFICAS
@@ -258,11 +274,10 @@ with tab4:
             st.markdown("---")
             st.subheader("📦 Subcategorías (Desglosadas)")
             if not df_e_filtered.empty and "Subcategoría" in df_e_filtered.columns:
-                 # Truco para separar comas
                  series_sub = df_e_filtered["Subcategoría"].astype(str).str.split(',').explode().str.strip()
                  st.bar_chart(series_sub.value_counts())
     else:
-        st.info("No hay datos suficientes para graficar.")
+        st.info("No hay datos suficientes.")
 
 # ==========================================
 # PESTAÑA 5: DESCARGAR EXCEL
