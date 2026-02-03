@@ -388,4 +388,65 @@ with tab4:
             st.session_state.stats_download = {
                 "Resumen_Anual": df_chart if 'df_chart' in locals() else pd.DataFrame(),
                 "Por_Periodo": data_p if 'data_p' in locals() else pd.DataFrame(),
-                "Por_Categoría": data_c if 'data
+                "Por_Categoría": data_c if 'data_c' in locals() else pd.DataFrame(),
+                "Por_Subcategoría": data_s if 'data_s' in locals() else pd.DataFrame()
+            }
+
+# ==========================================
+# PESTAÑA 5: DESCARGAS
+# ==========================================
+with tab5:
+    st.header("📥 Centro de Descargas")
+    
+    st.subheader("1. Base de Datos Completa")
+    if st.button("Generar Respaldo Completo (Excel)"):
+        b = io.BytesIO()
+        with pd.ExcelWriter(b, engine='openpyxl') as w: 
+            load_data("Proyectos").to_excel(w, 'Proyectos', index=False)
+            load_data("Entregables").to_excel(w, 'Entregables', index=False)
+        st.download_button("⬇️ Descargar BD.xlsx", b.getvalue(), "Respaldo_Completo.xlsx")
+
+    st.markdown("---")
+    st.subheader("2. Reporte de Gráficas (Datos)")
+    if "stats_download" in st.session_state and not st.session_state.stats_download.get("Resumen_Anual", pd.DataFrame()).empty:
+        if st.button("Generar Reporte Estadístico"):
+            b_stats = io.BytesIO()
+            with pd.ExcelWriter(b_stats, engine='openpyxl') as w:
+                st.session_state.stats_download["Resumen_Anual"].to_excel(w, "Resumen Anual", index=False)
+                st.session_state.stats_download["Por_Periodo"].to_excel(w, "Por Periodo", index=False)
+                st.session_state.stats_download["Por_Categoría"].to_excel(w, "Por Categoría", index=False)
+                st.session_state.stats_download["Por_Subcategoría"].to_excel(w, "Por Subcategoría", index=False)
+            st.download_button("⬇️ Descargar Reporte_Graficas.xlsx", b_stats.getvalue(), "Reporte_Graficas.xlsx")
+    else:
+        st.warning("⚠️ Primero ve a la pestaña 'Gráficas' para generar los datos.")
+
+# ==========================================
+# PESTAÑA 6: GLOSARIO
+# ==========================================
+with tab6:
+    st.header("📖 Glosario de Términos")
+    st.markdown("""
+    ### 🗂️ Categorías
+    * **Gestión:** Archivos que tengan que ver con la Dirección integral del proyecto.
+    * **Comunicación:** Diseño y ejecución de mensajes, canales para alinear a internos/externos.
+    * **Infraestructura:** Instalaciones fijas y móviles, planos arquitectónicos, señalética.
+    * **Investigación:** História de la finca, del CEDRAM, mapeos de la zona.
+    
+    ### 📂 Subcategorías
+    
+    #### 🔹 GESTIÓN
+    * **Administración:** Cronogramas, necesidades, planificación.
+    * **Financiamiento:** Becas, presupuestos, donantes.
+    * **Vinculación:** Contacto, relaciones públicas, alianzas.
+    
+    #### 🔹 COMUNICACIÓN
+    * **Memoria/archivo CEDRAM:** Archivos de memoria del equipo del CEDRAM.
+    * **Memoria/archivo PAP:** Archivos de memoria del equipo del PAP.
+    * **Diseño:** Identidad visual, folletos, pósters.
+    * **Difusión:** Redes sociales, campañas, impacto.
+    
+    #### 🔹 INFRAESTRUCTURA
+    * **Diseño arquitectónico:** Planos, renders, conceptos.
+    * **Mantenimiento:** Señalética, remodelación.
+    * **Productos teatrales:** Vestuario, Kamishibai.
+    """)
