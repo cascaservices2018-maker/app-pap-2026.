@@ -35,7 +35,7 @@ estilos_css = f"""
     .vega-embed svg text {{
         fill: white !important;
     }}
-    /* Ajuste para que los expanders se vean bien en fondo rojo */
+    /* Ajuste para expanders */
     .streamlit-expanderHeader {{
         background-color: #262730;
         color: white;
@@ -256,15 +256,12 @@ with tab3:
 
         st.markdown("---")
 
-        # --- TABLA PROYECTOS (COLAPSABLE) ---
-        # expanded=True para que se vea al inicio, cámbialo a False si quieres que empiece cerrada
         with st.expander(f"📂 1. Tabla de Proyectos ({len(df_v)})", expanded=True):
             ed_p = st.data_editor(df_v, use_container_width=True, key="ep", num_rows="fixed", column_config={"Categoría": st.column_config.TextColumn("Categoría(s)")})
             if st.button("💾 Actualizar y Corregir Proyectos"):
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
                 save_data(ed_p, "Proyectos"); st.success("✅ Guardado.")
 
-        # --- TABLA ENTREGABLES (COLAPSABLE) ---
         with st.expander("📦 2. Tabla de Entregables Asociados", expanded=True):
             if not df_ent.empty:
                 if f_sub: df_ef = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
@@ -278,7 +275,6 @@ with tab3:
                 else: st.info("No hay entregables para esta selección.")
             else: st.info("Base de datos vacía.")
 
-        # --- ZONA DE BORRADO ---
         with st.expander("🗑️ Zona de Borrado (Peligro)", expanded=False):
             ops = df_v["Nombre del Proyecto"].unique()
             if len(ops) > 0:
@@ -290,7 +286,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4
+# PESTAÑA 4 (CORREGIDA PARA EL VALUE ERROR)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -334,11 +330,25 @@ with tab4:
                     ea = ev["Año_R"].value_counts().reset_index(); ea.columns=["Año","Total"]; ea["Tipo"]="Entregables"
                 else: ea = pd.DataFrame()
                 
-                chart = alt.layer(
-                    alt.Chart(pd.concat([pa, ea])).mark_bar(size=30, cornerRadius=5).encode(x=alt.X('Tipo:N', axis=None), y='Total:Q', color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']))),
-                    alt.Chart(pd.concat([pa, ea])).mark_text(dy=-10, color='white').encode(x=alt.X('Tipo:N', axis=None), y='Total:Q', text='Total:Q')
-                ).properties(width=100, height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
+                # --- SOLUCIÓN AL ERROR DE FACET ---
+                df_chart = pd.concat([pa, ea]) # 1. Unimos datos primero
+                base = alt.Chart(df_chart).encode(
+                    x=alt.X('Tipo:N', title=None, axis=None),
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                )
+                bars = base.mark_bar(size=35, cornerRadius=5).encode(y=alt.Y('Total:Q', title='Total'))
+                text = base.mark_text(dy=-10, color='white').encode(y=alt.Y('Total:Q'), text=alt.Text('Total:Q'))
+                
+                # 2. Layer, Properties y Facet en orden correcto
+                chart = alt.layer(bars, text).properties(
+                    width=100, 
+                    height=250
+                ).facet(
+                    column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))
+                ).configure_view(stroke='transparent')
+                
                 st.altair_chart(chart)
+                
             else: st.info("Registra más años para ver la evolución.")
 
             st.markdown("---")
