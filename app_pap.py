@@ -129,11 +129,13 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
     st.altair_chart(chart, use_container_width=True)
 
-# --- INICIALIZACIÓN DE VARIABLES ---
+# --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
 if "borradores" not in st.session_state: st.session_state.borradores = {}
 if "proyecto_activo_masivo" not in st.session_state: st.session_state.proyecto_activo_masivo = None
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = pd.DataFrame()
+# NUEVA VARIABLE: Para recordar qué proyecto acabas de crear
+if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
 
 # --- INTERFAZ ---
 with st.sidebar:
@@ -196,12 +198,16 @@ with tab1:
                     }
                     save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
                     st.success("¡Proyecto guardado con éxito!")
+                    
+                    # --- GUARDAMOS EL NOMBRE DEL PROYECTO PARA LA PESTAÑA 2 ---
+                    st.session_state.proy_recien_creado = nombre
+                    
                     st.session_state.form_seed += 1
                     time.sleep(1)
                     st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA
+# PESTAÑA 2: CARGA MASIVA (AUTO-SELECCIÓN)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -210,7 +216,15 @@ with tab2:
     df_p = load_data("Proyectos")
     if df_p.empty: st.warning("Cargando proyectos...")
     elif "Nombre del Proyecto" in df_p.columns:
-        proy_sel = st.selectbox("Selecciona el Proyecto:", sorted(df_p["Nombre del Proyecto"].unique().tolist()))
+        
+        lista_proyectos = sorted(df_p["Nombre del Proyecto"].unique().tolist())
+        
+        # --- LÓGICA DE AUTO-SELECCIÓN ---
+        indice_defecto = 0
+        if st.session_state.proy_recien_creado in lista_proyectos:
+            indice_defecto = lista_proyectos.index(st.session_state.proy_recien_creado)
+        
+        proy_sel = st.selectbox("Selecciona el Proyecto:", lista_proyectos, index=indice_defecto)
         
         info_p = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
         cat_auto = info_p.get("Categoría", "General")
@@ -334,7 +348,7 @@ with tab3:
                 df_master_proy = load_data("Proyectos")
                 df_master_proy.update(ed_p) 
                 save_data(df_master_proy, "Proyectos")
-                st.success("✅ Guardado.")
+                st.success("✅ Guardado. Año, Periodo y datos actualizados.")
 
         with st.expander("📦 2. Tabla de Entregables Asociados", expanded=True):
             if not df_ent.empty:
@@ -363,7 +377,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS INTELIGENTES (RESUMEN SI FILTRO VACÍO)
+# PESTAÑA 4: GRÁFICAS
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -381,7 +395,6 @@ with tab4:
             for s in df_e_s["Subcategoría"].dropna(): subs_g.update([x.strip() for x in str(s).split(',') if x.strip()])
 
         c1, c2, c3, c4 = st.columns(4)
-        # NOTA: No usamos defaults para permitir selección "vacía" = "todo"
         yg = c1.multiselect("Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()))
         pg = c2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"])
         cg = c3.multiselect("Categoría", sorted(list(cats_g)))
@@ -389,32 +402,23 @@ with tab4:
 
         # --- LÓGICA DE FILTRADO ADITIVA ---
         df_f = df_p_s.copy()
-        
-        # 1. Filtro Año
         if yg: df_f = df_f[df_f["Año"].isin(yg)]
-        
-        # 2. Filtro Periodo (Si está vacío, muestra TODOS los periodos de los años seleccionados)
         if pg: df_f = df_f[df_f["Periodo"].isin(pg)]
-        
-        # 3. Filtro Categoría (Si está vacío, muestra TODAS)
         if cg: df_f = df_f[df_f["Categoría"].apply(lambda x: any(item in cg for item in str(x).split(', ')))]
 
-        # 4. Sincronización Entregables
         df_e_f = df_e_s.copy() if not df_e_s.empty else pd.DataFrame()
         if sg and not df_e_f.empty:
             df_e_f = df_e_f[df_e_f["Subcategoría"].apply(lambda x: any(item in sg for item in str(x).split(', ')))]
-            # Restringimos proyectos a los que tienen esas subcategorías
             df_f = df_f[df_f["Nombre del Proyecto"].isin(df_e_f["Proyecto_Padre"].unique())]
 
         if df_f.empty: st.warning("Sin datos con estos filtros.")
         else:
             st.markdown("---")
-            if df_f["Año"].nunique() > 0: # Mostrar siempre si hay datos, aunque sea 1 año
+            if df_f["Año"].nunique() > 0: 
                 st.subheader("📅 Evolución Anual / Resumen")
                 pa = df_f["Año"].value_counts().reset_index(); pa.columns=["Año","Total"]; pa["Tipo"]="Proyectos"
                 vis = df_f["Nombre del Proyecto"].unique()
                 if not df_e_s.empty:
-                    # Si no hay filtro de subcategoría, usamos todos los entregables de los proyectos visibles
                     ev = df_e_f[df_e_f["Proyecto_Padre"].isin(vis)] if sg else df_e_s[df_e_s["Proyecto_Padre"].isin(vis)]
                     mapa = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
                     ev["Año_R"] = ev["Proyecto_Padre"].map(mapa); ev = ev.dropna(subset=["Año_R"])
