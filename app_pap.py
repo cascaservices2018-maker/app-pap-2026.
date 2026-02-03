@@ -129,12 +129,11 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
     st.altair_chart(chart, use_container_width=True)
 
-# --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
-if "form_seed" not in st.session_state:
-    st.session_state.form_seed = 0
-
-if "borradores" not in st.session_state:
-    st.session_state.borradores = {}
+# --- INICIALIZACIÓN DE ESTADO ---
+if "form_seed" not in st.session_state: st.session_state.form_seed = 0
+# Variables para controlar la edición masiva sin reseteos
+if "proyecto_activo_masivo" not in st.session_state: st.session_state.proyecto_activo_masivo = None
+if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = pd.DataFrame()
 
 # --- INTERFAZ ---
 with st.sidebar:
@@ -159,7 +158,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ==========================================
-# PESTAÑA 1: REGISTRO
+# PESTAÑA 1: REGISTRO (CON RESET INTELIGENTE)
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
@@ -180,9 +179,9 @@ with tab1:
 
         if st.form_submit_button("💾 Guardar Proyecto"):
             if not nombre: 
-                st.error("⚠️ El nombre es obligatorio.")
+                st.error("⚠️ El nombre es obligatorio. (Tus datos siguen aquí, complétalos)")
             elif not cats: 
-                st.error("⚠️ Debes elegir al menos una categoría.")
+                st.error("⚠️ Debes elegir al menos una categoría. (Tus datos siguen aquí, complétalos)")
             else:
                 df = load_data("Proyectos")
                 if not df.empty and "Nombre del Proyecto" in df.columns and nombre in df["Nombre del Proyecto"].values:
@@ -202,11 +201,11 @@ with tab1:
                     st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA
+# PESTAÑA 2: CARGA MASIVA (ESTABILIDAD TOTAL)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Memoria Estable:** Puedes editar sin que se borre. Los cambios se guardan solo al dar clic en 'Guardar'.")
+    st.info("💡 **Estabilidad:** Puedes copiar y pegar desde Excel sin que se borren los datos.")
     
     df_p = load_data("Proyectos")
     if df_p.empty: st.warning("Cargando proyectos...")
@@ -216,11 +215,12 @@ with tab2:
         info_p = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
         cat_auto = info_p.get("Categoría", "General")
         estimado = int(info_p.get("Num_Entregables", 5))
-        
         st.caption(f"Categoría: **{cat_auto}** | Espacios iniciales: **{estimado}**")
 
-        # Cargar borrador si existe, sino crearlo
-        if proy_sel not in st.session_state.borradores:
+        # --- LÓGICA DE CARGA ÚNICA ---
+        # Solo cargamos de la BD si CAMBIAMOS de proyecto. Si es el mismo, usamos la memoria.
+        if st.session_state.proyecto_activo_masivo != proy_sel:
+            # 1. Cargar datos frescos de la BD
             df_e = load_data("Entregables")
             existentes = pd.DataFrame()
             if not df_e.empty:
@@ -233,19 +233,25 @@ with tab2:
                     "Subcategoría": "Subcategorías",
                     "Plantillas": "Plantillas_Usadas"
                 })
-                st.session_state.borradores[proy_sel] = datos_carga.fillna("").astype(str)
+                # Forzamos todo a string para evitar errores al pegar
+                st.session_state.df_buffer_masivo = datos_carga.fillna("").astype(str)
             else:
-                st.session_state.borradores[proy_sel] = pd.DataFrame(
+                # Creamos tabla vacía
+                st.session_state.df_buffer_masivo = pd.DataFrame(
                     "", 
                     index=range(estimado), 
                     columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]
                 ).astype(str)
+            
+            # Actualizamos el puntero del proyecto actual
+            st.session_state.proyecto_activo_masivo = proy_sel
 
+        # --- EDITOR CONECTADO A MEMORIA ---
         st.write("👇 **Edita o agrega entregables:**")
         edited_df = st.data_editor(
-            st.session_state.borradores[proy_sel],
+            st.session_state.df_buffer_masivo, # Siempre leemos del buffer
             num_rows="dynamic",
-            key=f"editor_persistente_{proy_sel}",
+            key=f"editor_masivo_estable", # Key fija para estabilidad
             use_container_width=True,
             column_config={
                 "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", default="General", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
@@ -255,8 +261,9 @@ with tab2:
             }
         )
         
-        if not edited_df.equals(st.session_state.borradores[proy_sel]):
-             st.session_state.borradores[proy_sel] = edited_df
+        # ACTUALIZACIÓN EN TIEMPO REAL DEL BUFFER (Para soportar pegado y ediciones múltiples)
+        if not edited_df.equals(st.session_state.df_buffer_masivo):
+            st.session_state.df_buffer_masivo = edited_df
 
         if st.button("🚀 Guardar Cambios (Reemplazar)"):
             datos_validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
@@ -266,6 +273,7 @@ with tab2:
                     datos_validos["Subcategorías"] = datos_validos["Subcategorías"].apply(limpiar_textos)
                     df_master = load_data("Entregables")
                     
+                    # Limpiamos previos de este proyecto
                     if not df_master.empty:
                         df_master = df_master[df_master["Proyecto_Padre"] != proy_sel]
                     
@@ -288,6 +296,8 @@ with tab2:
                     st.success(f"¡Listo! Se actualizaron {len(nuevas_filas)} entregables.")
                     st.balloons()
                     time.sleep(1)
+                    # Forzamos recarga desde cero para asegurar sincronía
+                    st.session_state.proyecto_activo_masivo = None 
                     st.rerun()
                 except Exception as e: st.error(f"Error al guardar: {e}")
 
@@ -331,7 +341,6 @@ with tab3:
         st.markdown("---")
 
         with st.expander(f"📂 1. Tabla de Proyectos ({len(df_v)})", expanded=True):
-            # CONFIGURACIÓN DE COLUMNAS PARA EDICIÓN COMPLETA
             ed_p = st.data_editor(
                 df_v, 
                 use_container_width=True, 
@@ -339,18 +348,14 @@ with tab3:
                 num_rows="fixed", 
                 column_config={
                     "Categoría": st.column_config.TextColumn("Categoría(s)"),
-                    # PERMITE EDITAR AÑO
                     "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
-                    # PERMITE EDITAR PERIODO (DROPDOWN)
                     "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
                 }
             )
             if st.button("💾 Actualizar y Corregir Proyectos"):
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
-                
                 df_master_proy = load_data("Proyectos")
                 df_master_proy.update(ed_p) 
-                
                 save_data(df_master_proy, "Proyectos")
                 st.success("✅ Guardado. Año, Periodo y datos actualizados.")
 
@@ -428,7 +433,7 @@ with tab4:
                 df_chart = pd.concat([pa, ea])
                 base = alt.Chart(df_chart).encode(
                     x=alt.X('Tipo:N', axis=None),
-                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']))
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
                 )
                 bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
                 text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text=alt.Text('Total:Q'))
