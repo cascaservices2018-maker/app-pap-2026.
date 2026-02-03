@@ -40,59 +40,84 @@ estilos_css = f"""
 st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 DICCIONARIO DE CORRECCIÓN ORTOGRÁFICA
+# 📖 DICCIONARIO INTELIGENTE (CORRECTOR DE ERRORES)
 # ==========================================
-# Aquí definimos las correcciones exactas
+# La clave (izquierda) es el error común o la raíz de la palabra.
+# El valor (derecha) es la forma PERFECTA de escribirlo.
 DICCIONARIO_CORRECTO = {
+    # CATEGORÍAS PRINCIPALES
     "gestion": "Gestión",
+    "gestión": "Gestión",
+    
     "comunicacion": "Comunicación",
+    "comunicasion": "Comunicación", # <--- Tu caso específico
+    "comunica": "Comunicación",
+    
     "infraestructura": "Infraestructura",
+    "infra": "Infraestructura",
+    
     "investigacion": "Investigación",
+    "investigasion": "Investigación", # Error común s/c
+    
+    # SUBCATEGORÍAS
     "difusion": "Difusión",
+    "difucion": "Difusión", # Error común s/c
+    
     "vinculacion": "Vinculación",
+    "vinc": "Vinculación",
+    
     "financiamiento": "Financiamiento",
+    "finanza": "Financiamiento",
+    
     "diseno": "Diseño",
+    "diseño": "Diseño",
+    
     "arquitectonico": "Arquitectónico",
+    "arquitectura": "Arquitectónico",
+    
     "mantenimiento": "Mantenimiento",
     
-    # CORRECCIÓN SOLICITADA:
-    "teatrales": "Productos teatrales",          # Si escriben solo "teatrales"
-    "productos teatrales": "Productos teatrales", # Si lo escriben con minúsculas
-    "memoria/archivo": "Memoria/Archivo",
-    "memoria": "Memoria/Archivo"
+    "teatrales": "Productos teatrales",
+    "productos": "Productos teatrales",
+    "producto": "Productos teatrales",
+    
+    "memoria": "Memoria/Archivo",
+    "archivo": "Memoria/Archivo"
 }
 
 def normalizar_comparacion(texto):
-    """Quita acentos y pone minúsculas para comparar (ej: 'Gestión' -> 'gestion')"""
+    """Quita acentos y pone minúsculas para poder comparar 'comunicasion' con 'comunicación'"""
     if pd.isna(texto) or texto == "": return ""
     texto = str(texto).lower().strip()
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def limpiar_textos(texto_sucio):
     """
-    1. Separa por comas.
-    2. Busca errores ortográficos y los corrige.
-    3. Elimina duplicados (ej: 'Diseño, diseño' -> 'Diseño').
+    Magia: Recibe 'comunicasion, difucion' y devuelve 'Comunicación, Difusión'
     """
     if pd.isna(texto_sucio) or str(texto_sucio).strip() == "": return ""
     
+    # 1. Separar por comas (por si pusieron varias categorías)
     palabras = [p.strip() for p in str(texto_sucio).split(',')]
     palabras_corregidas = []
     
     for p in palabras:
-        p_norm = normalizar_comparacion(p)
+        p_norm = normalizar_comparacion(p) # Convierte "Comunicasion" -> "comunicasion"
         encontrado = False
-        # Buscar coincidencia exacta o parcial en el diccionario
-        for error, correccion in DICCIONARIO_CORRECTO.items():
-            if error in p_norm: # "teatrales" está en "mis productos teatrales" -> Lo corrige
-                palabras_corregidas.append(correccion)
+        
+        # 2. Buscar en el diccionario
+        for error_clave, correccion_perfecta in DICCIONARIO_CORRECTO.items():
+            # Si el error conocido está dentro de lo que escribió el usuario
+            if error_clave in p_norm: 
+                palabras_corregidas.append(correccion_perfecta)
                 encontrado = True
                 break
+        
+        # 3. Si no es un error conocido, lo dejamos pero con Mayúscula inicial
         if not encontrado:
-            # Si no está en el diccionario, solo poner mayúscula inicial
             palabras_corregidas.append(p.capitalize()) 
             
-    # Eliminar duplicados y ordenar alfabéticamente
+    # 4. Eliminar duplicados y ordenar (para que no salga "Diseño, Diseño")
     return ", ".join(sorted(list(dict.fromkeys(palabras_corregidas))))
 
 # ==========================================
@@ -199,8 +224,9 @@ with tab1:
                 if not df_proy.empty and "Nombre del Proyecto" in df_proy.columns and nombre_proyecto in df_proy["Nombre del Proyecto"].values:
                      st.warning("⚠️ Ya existe un proyecto con ese nombre.")
                 else:
-                    # Limpiamos antes de guardar
+                    # Limpiamos antes de guardar (Aquí entra la corrección automática)
                     categoria_str = limpiar_textos(", ".join(cats_seleccionadas))
+                    
                     nuevo = {
                         "Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre_proyecto,
                         "Descripción": descripcion, "Num_Entregables": num_entregables,
@@ -210,14 +236,14 @@ with tab1:
                     }
                     df_updated = pd.concat([df_proy, pd.DataFrame([nuevo])], ignore_index=True)
                     save_data(df_updated, "Proyectos")
-                    st.success("¡Proyecto guardado!")
+                    st.success("¡Proyecto guardado! (Ortografía corregida automáticamente)")
 
 # ==========================================
 # PESTAÑA 2
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida de Entregables")
-    st.info("💡 **Tip:** Escribe subcategorías separadas por coma. Ej: _Diseño, Difusión_")
+    st.info("💡 **Tip:** Escribe subcategorías como quieras (ej: 'difucion'). El sistema lo corregirá a 'Difusión' al guardar.")
     df_p = load_data("Proyectos")
     
     if df_p.empty: st.warning("Cargando proyectos...")
@@ -250,7 +276,7 @@ with tab2:
             if datos_validos.empty: st.error("La tabla está vacía.")
             else:
                 try:
-                    # Limpieza automática antes de guardar
+                    # Limpieza automática antes de guardar (CORRIGE ERRORES AQUÍ)
                     datos_validos["Subcategorías"] = datos_validos["Subcategorías"].apply(limpiar_textos)
                     
                     df_ent_cloud = load_data("Entregables")
@@ -265,7 +291,7 @@ with tab2:
                         })
                     df_final = pd.concat([df_ent_cloud, pd.DataFrame(nuevas_filas)], ignore_index=True)
                     save_data(df_final, "Entregables")
-                    st.success(f"¡Éxito! Guardados {len(nuevas_filas)} entregables.")
+                    st.success(f"¡Éxito! Guardados {len(nuevas_filas)} entregables (Corregidos).")
                     del st.session_state[session_key]
                     st.balloons(); time.sleep(1); st.rerun()
                 except Exception as e: st.error(f"Error al guardar: {e}")
@@ -275,13 +301,13 @@ with tab2:
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
-    st.info("💡 **Nota:** Si ves categorías duplicadas, da clic en el botón 'Actualizar' y se arreglarán solas.")
+    st.info("💡 **Magia:** Si ves 'comunicasion', solo dale al botón 'Actualizar' y se convertirá en 'Comunicación'.")
     
     df_proy = load_data("Proyectos")
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
-        # Preparación de filtros usando la limpieza visual
+        # Preparación de filtros usando la limpieza visual (limpia los filtros aunque la DB esté sucia)
         todas_cats = set()
         if "Categoría" in df_proy.columns:
             for c in df_proy["Categoría"].dropna(): 
@@ -320,8 +346,9 @@ with tab3:
         st.subheader(f"1. Proyectos ({len(df_view)})")
         edited_proy = st.data_editor(df_view, use_container_width=True, key="editor_proyectos_main", num_rows="fixed", column_config={"Categoría": st.column_config.TextColumn("Categoría(s)")})
         
-        if st.button("💾 Actualizar Cambios en Proyectos"):
+        if st.button("💾 Actualizar y Corregir Proyectos"):
             try:
+                # Limpieza AL GUARDAR
                 if "Categoría" in edited_proy.columns: edited_proy["Categoría"] = edited_proy["Categoría"].apply(limpiar_textos)
                 df_master_proy = load_data("Proyectos")
                 df_master_proy.update(edited_proy)
@@ -340,8 +367,9 @@ with tab3:
             
             if not df_ent_final.empty:
                 edited_ent = st.data_editor(df_ent_final, use_container_width=True, key="editor_entregables_main", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
-                if st.button("💾 Actualizar Cambios en Entregables"):
+                if st.button("💾 Actualizar y Corregir Entregables"):
                     try:
+                        # Limpieza AL GUARDAR
                         if "Subcategoría" in edited_ent.columns: edited_ent["Subcategoría"] = edited_ent["Subcategoría"].apply(limpiar_textos)
                         df_master_ent = load_data("Entregables")
                         df_master_ent.update(edited_ent)
@@ -364,7 +392,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4 (GRÁFICAS - CORREGIDAS + LIMPIEZA)
+# PESTAÑA 4 (GRÁFICAS - AHORA LIMPIAS VISUALMENTE)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -373,6 +401,7 @@ with tab4:
 
     if not df_p_s.empty and "Año" in df_p_s.columns:
         # APLICAMOS LIMPIEZA EN VIVO PARA LAS GRÁFICAS
+        # (Esto hace que "comunicasion" y "Comunicación" se sumen juntos en la barra)
         if "Categoría" in df_p_s.columns:
             df_p_s["Categoría"] = df_p_s["Categoría"].apply(limpiar_textos)
         if not df_e_s.empty and "Subcategoría" in df_e_s.columns:
@@ -409,6 +438,7 @@ with tab4:
         if df_f.empty: st.warning("No hay datos con esos filtros.")
         else:
             st.markdown("---")
+            # --- EVOLUCIÓN ANUAL ---
             st.subheader("📅 Evolución Anual (Proyectos vs Entregables)")
             
             p_anios = df_f["Año"].value_counts().reset_index(); p_anios.columns=["Año", "Total"]; p_anios["Tipo"]="Proyectos"
@@ -434,6 +464,7 @@ with tab4:
                 bars = base.mark_bar(size=35, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(y=alt.Y('Total:Q', title='Total'))
                 text = base.mark_text(dy=-10, color='white').encode(y=alt.Y('Total:Q'), text=alt.Text('Total:Q'))
                 
+                # FACET para separar por años
                 chart_anual = alt.layer(bars, text).properties(height=250).facet(
                     column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white", titleOrient="bottom", labelOrient="bottom"))
                 ).configure_view(stroke='transparent')
