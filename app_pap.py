@@ -17,6 +17,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- FUNCIÓN DE CARGA INTELIGENTE (TTL=5) ---
 def load_data(sheet_name):
     try:
+        # ttl=5: Memoria de 5 segundos para no saturar a Google
         df = conn.read(worksheet=sheet_name, ttl=5)
         if not df.empty:
             df.columns = df.columns.str.strip()
@@ -46,13 +47,13 @@ st.markdown("---")
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "1. Registrar PROYECTO", 
     "2. Carga Masiva ENTREGABLES", 
-    "3. 📝 Buscar y Editar", # ¡Nombre actualizado!
+    "3. 📝 Buscar y Editar", 
     "4. 📊 Gráficas",
     "5. 📥 Descargar Excel"
 ])
 
 # ==========================================
-# PESTAÑA 1: REGISTRO DE PROYECTOS
+# PESTAÑA 1: REGISTRO DE PROYECTOS (¡AHORA CON MULTI-CATEGORÍA!)
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
@@ -63,7 +64,8 @@ with tab1:
         with col2:
             periodo = st.selectbox("Periodo", ["Primavera", "Verano", "Otoño"])
         with col3:
-            categoria_proy = st.selectbox("Categoría General", CATEGORIAS_LISTA)
+            # CAMBIO: st.multiselect en lugar de st.selectbox
+            cats_seleccionadas = st.multiselect("Categoría(s)", CATEGORIAS_LISTA)
 
         nombre_proyecto = st.text_input("Nombre del Proyecto")
         descripcion = st.text_area("Descripción")
@@ -77,15 +79,21 @@ with tab1:
         if st.form_submit_button("💾 Guardar Proyecto"):
             if not nombre_proyecto:
                 st.error("El nombre es obligatorio")
+            elif not cats_seleccionadas:
+                st.error("Debes elegir al menos una categoría")
             else:
                 df_proy = load_data("Proyectos")
                 if not df_proy.empty and "Nombre del Proyecto" in df_proy.columns and nombre_proyecto in df_proy["Nombre del Proyecto"].values:
                      st.warning("⚠️ Ya existe un proyecto con ese nombre.")
                 else:
+                    # Unimos las categorías con comas para guardarlas en una sola celda
+                    categoria_str = ", ".join(cats_seleccionadas)
+
                     nuevo = {
                         "Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre_proyecto,
                         "Descripción": descripcion, "Num_Entregables": num_entregables,
-                        "Categoría": categoria_proy, "Comentarios": comentarios,
+                        "Categoría": categoria_str, # Guardamos "Gestión, Comunicación"
+                        "Comentarios": comentarios,
                         "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     df_updated = pd.concat([df_proy, pd.DataFrame([nuevo])], ignore_index=True)
@@ -113,7 +121,7 @@ with tab2:
             cat_auto = info_proyecto.get("Categoría", "General")
             num_estimado = int(info_proyecto.get("Num_Entregables", 5))
             
-            st.caption(f"Categoría: **{cat_auto}** | Espacios generados: **{num_estimado}**")
+            st.caption(f"Categoría(s): **{cat_auto}** | Espacios generados: **{num_estimado}**")
 
             # Session State
             session_key = f"data_editor_{proyecto_sel}"
@@ -175,17 +183,17 @@ with tab2:
                         st.error(f"Error al guardar: {e}")
 
 # ==========================================
-# PESTAÑA 3: BUSCAR Y EDITAR (¡NUEVO!)
+# PESTAÑA 3: BUSCAR Y EDITAR
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
-    st.info("Haz doble clic en cualquier celda para corregirla. Al terminar, presiona el botón 'Actualizar' correspondiente.")
+    st.info("Haz doble clic en cualquier celda para corregirla. Al terminar, presiona el botón 'Actualizar'.")
     
     df_proy = load_data("Proyectos")
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
-        # --- FILTROS ---
+        # Filtros
         c1, c2 = st.columns(2)
         with c1:
             years = sorted(df_proy["Año"].unique())
@@ -193,30 +201,25 @@ with tab3:
         with c2:
             f_period = st.multiselect("Filtrar por Periodo:", ["Primavera", "Verano", "Otoño"])
 
-        # Aplicar filtros
         df_view = df_proy.copy()
         if f_year: df_view = df_view[df_view["Año"].isin(f_year)]
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
 
         # --- SECCIÓN PROYECTOS ---
         st.subheader("1. Proyectos")
-        
-        # Tabla Editable de Proyectos
         edited_proy = st.data_editor(
             df_view,
             use_container_width=True,
             key="editor_proyectos_main",
-            num_rows="fixed" # No permitimos agregar/borrar filas aquí para no romper índices
+            num_rows="fixed"
         )
         
         if st.button("💾 Actualizar Cambios en Proyectos"):
             try:
-                # Cargamos la versión más reciente de la nube
                 df_master_proy = load_data("Proyectos")
-                # Actualizamos solo las filas modificadas usando los índices
                 df_master_proy.update(edited_proy)
                 save_data(df_master_proy, "Proyectos")
-                st.success("✅ Proyectos actualizados correctamente.")
+                st.success("✅ Proyectos actualizados.")
             except Exception as e:
                 st.error(f"Error al actualizar: {e}")
 
@@ -224,17 +227,15 @@ with tab3:
 
         # --- SECCIÓN ENTREGABLES ---
         st.subheader("2. Entregables")
-        
         if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
             visible_projects = df_view["Nombre del Proyecto"].unique()
             df_ent_view = df_ent[df_ent["Proyecto_Padre"].isin(visible_projects)]
             
-            # Tabla Editable de Entregables
             edited_ent = st.data_editor(
                 df_ent_view,
                 use_container_width=True,
                 key="editor_entregables_main",
-                num_rows="fixed", # Solo edición de contenido
+                num_rows="fixed",
                 column_config={
                     "Subcategoría": st.column_config.TextColumn("Subcategoría"),
                     "Entregable": st.column_config.TextColumn("Nombre Entregable"),
@@ -247,7 +248,7 @@ with tab3:
                     df_master_ent = load_data("Entregables")
                     df_master_ent.update(edited_ent)
                     save_data(df_master_ent, "Entregables")
-                    st.success("✅ Entregables actualizados correctamente.")
+                    st.success("✅ Entregables actualizados.")
                 except Exception as e:
                     st.error(f"Error al actualizar: {e}")
         else:
@@ -255,7 +256,6 @@ with tab3:
 
         st.markdown("---")
         
-        # --- ZONA DE BORRADO ---
         with st.expander("🗑️ Zona de Borrado (Peligro)"):
             st.warning("Esto borra el proyecto y TODOS sus entregables.")
             to_del = st.selectbox("Proyecto a eliminar:", df_proy["Nombre del Proyecto"].unique())
@@ -274,7 +274,7 @@ with tab3:
         st.info("Cargando base de datos...")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS
+# PESTAÑA 4: GRÁFICAS (¡MEJORADA PARA MULTI-CATEGORÍA!)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -323,7 +323,10 @@ with tab4:
                 st.bar_chart(df_filtered["Periodo"].value_counts())
             with col2:
                 st.subheader("Por Categoría")
-                st.bar_chart(df_filtered["Categoría"].value_counts())
+                # LÓGICA MEJORADA: Separa las categorías si hay comas
+                if "Categoría" in df_filtered.columns:
+                    series_cat = df_filtered["Categoría"].astype(str).str.split(',').explode().str.strip()
+                    st.bar_chart(series_cat.value_counts())
                 
             st.markdown("---")
             st.subheader("📦 Subcategorías (Desglosadas)")
