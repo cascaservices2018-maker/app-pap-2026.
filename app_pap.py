@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 import io
+import time
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión PAP - Nube", layout="wide", page_icon="☁️")
@@ -13,20 +14,33 @@ CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigaci
 # --- CONEXIÓN A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNCIÓN CHISMOSA (MODO DEBUG) ---
+# --- FUNCIÓN DE CARGA INTELIGENTE (Con memoria de 5 segundos) ---
 def load_data(sheet_name):
     try:
-        df = conn.read(worksheet=sheet_name, ttl=0)
+        # CAMBIO CLAVE: ttl=5 (Guarda en memoria 5 segundos para no bloquear Google)
+        df = conn.read(worksheet=sheet_name, ttl=5)
         if not df.empty:
             df.columns = df.columns.str.strip()
         return df
     except Exception as e:
-        # ESTO NOS DIRÁ EL ERROR REAL
-        st.error(f"🚨 ERROR CRÍTICO leyendo '{sheet_name}': {e}")
-        return pd.DataFrame()
+        # Si falla por bloqueo, esperamos un poquito y reintentamos una vez
+        try:
+            time.sleep(2)
+            df = conn.read(worksheet=sheet_name, ttl=5)
+            if not df.empty:
+                 df.columns = df.columns.str.strip()
+            return df
+        except:
+            st.error(f"🚨 Error de conexión o bloqueo de Google. Espera 1 minuto y recarga.")
+            return pd.DataFrame()
 
 def save_data(df, sheet_name):
-    conn.update(worksheet=sheet_name, data=df)
+    try:
+        conn.update(worksheet=sheet_name, data=df)
+        # Limpiamos caché forzoso para ver los cambios inmediatos
+        st.cache_data.clear()
+    except Exception as e:
+        st.error(f"No se pudo guardar: {e}")
 
 # --- TÍTULO ---
 st.title("☁️ Sistema PAP: Colaborativo")
@@ -82,7 +96,7 @@ with tab1:
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (ESTABLE)
+# PESTAÑA 2: CARGA MASIVA (OPTIMIZADA)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida de Entregables")
@@ -91,7 +105,7 @@ with tab2:
     df_p = load_data("Proyectos")
     
     if df_p.empty:
-        st.warning("No se encontraron proyectos (o hubo error de lectura, revisa arriba).")
+        st.warning("Esperando conexión con base de datos...")
     else:
         if "Nombre del Proyecto" in df_p.columns:
             lista_proyectos = sorted(df_p["Nombre del Proyecto"].unique().tolist())
@@ -104,7 +118,7 @@ with tab2:
             
             st.caption(f"Categoría: **{cat_auto}** | Espacios generados: **{num_estimado}**")
 
-            # --- USO DE SESSION STATE (MEMORIA) ---
+            # --- USO DE SESSION STATE PARA EVITAR RECARGAS ---
             session_key = f"data_editor_{proyecto_sel}"
 
             if session_key not in st.session_state:
@@ -159,10 +173,8 @@ with tab2:
                         save_data(df_final, "Entregables")
                         st.success(f"¡Éxito! Se guardaron {len(nuevas_filas)} entregables.")
                         
-                        # Limpiar memoria tras guardar
                         del st.session_state[session_key]
                         st.balloons()
-                        import time
                         time.sleep(1)
                         st.rerun()
                         
@@ -212,7 +224,7 @@ with tab3:
                 st.success("Eliminado.")
                 st.rerun()
     else:
-        st.info("No se encontraron datos.")
+        st.info("Cargando datos...")
 
 # ==========================================
 # PESTAÑA 4: GRÁFICAS
@@ -272,7 +284,7 @@ with tab4:
                  series_sub = df_e_filtered["Subcategoría"].astype(str).str.split(',').explode().str.strip()
                  st.bar_chart(series_sub.value_counts())
     else:
-        st.info("No hay datos suficientes.")
+        st.info("Cargando gráficas...")
 
 # ==========================================
 # PESTAÑA 5: DESCARGAR EXCEL
