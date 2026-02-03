@@ -13,6 +13,32 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ==========================================
+# 🎨 PERSONALIZACIÓN DE COLORES (CSS)
+# ==========================================
+# Puedes cambiar estos códigos HEX por los que tú quieras.
+# Buscador de colores: https://htmlcolorcodes.com/es/
+COLOR_FONDO_PRINCIPAL = "#A60000"  # Gris oscuro elegante (Default Streamlit Dark)
+COLOR_BARRA_LATERAL = "#262730"    # Un poco más claro para distinguir
+
+estilos_css = f"""
+<style>
+    /* Color de fondo principal */
+    .stApp {{
+        background-color: {COLOR_FONDO_PRINCIPAL};
+    }}
+    /* Color de la barra lateral */
+    [data-testid="stSidebar"] {{
+        background-color: {COLOR_BARRA_LATERAL};
+    }}
+</style>
+"""
+st.markdown(estilos_css, unsafe_allow_html=True)
+
+# ==========================================
+# 🔗 CONFIGURACIÓN DEL SISTEMA
+# ==========================================
+
 # --- TU LOGO AQUÍ ---
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
 
@@ -49,7 +75,6 @@ def save_data(df, sheet_name):
 
 # --- BARRA LATERAL (SIDEBAR) CON LOGO GRANDE ---
 with st.sidebar:
-    # AUMENTADO: de 150 a 280 (casi el ancho total de la barra)
     st.image(LOGO_URL, width=280) 
     st.markdown("### ⚙️ Panel de Control")
     st.info("Sistema de Gestión de Proyectos PAP - 2026")
@@ -57,11 +82,9 @@ with st.sidebar:
     st.write("Bienvenido al sistema colaborativo.")
 
 # --- ENCABEZADO PRINCIPAL (HEADER) CON LOGO GRANDE ---
-# Ajustamos columnas: de [1, 8] a [2, 8] para darle espacio al logo grande
 col_logo, col_titulo = st.columns([2, 8])
 
 with col_logo:
-    # AUMENTADO: de 80 a 170
     st.image(LOGO_URL, width=170) 
 with col_titulo:
     st.title("Sistema PAP: Colaborativo")
