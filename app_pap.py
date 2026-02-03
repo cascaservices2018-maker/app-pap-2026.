@@ -14,7 +14,6 @@ st.set_page_config(
 )
 
 # --- TU LOGO AQUÍ ---
-# Puedes cambiar este link por el de tu universidad o subir una imagen a GitHub
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
 
 # --- LISTAS FIJAS ---
@@ -48,20 +47,22 @@ def save_data(df, sheet_name):
     except Exception as e:
         st.error(f"No se pudo guardar: {e}")
 
-# --- BARRA LATERAL (SIDEBAR) CON LOGO ---
+# --- BARRA LATERAL (SIDEBAR) CON LOGO GRANDE ---
 with st.sidebar:
-    st.image(LOGO_URL, width=150) # Logo en la barra lateral
+    # AUMENTADO: de 150 a 280 (casi el ancho total de la barra)
+    st.image(LOGO_URL, width=280) 
     st.markdown("### ⚙️ Panel de Control")
     st.info("Sistema de Gestión de Proyectos PAP - 2026")
     st.markdown("---")
     st.write("Bienvenido al sistema colaborativo.")
 
-# --- ENCABEZADO PRINCIPAL (HEADER) ---
-# Creamos dos columnas: una pequeña para el logo y otra para el título
-col_logo, col_titulo = st.columns([1, 8])
+# --- ENCABEZADO PRINCIPAL (HEADER) CON LOGO GRANDE ---
+# Ajustamos columnas: de [1, 8] a [2, 8] para darle espacio al logo grande
+col_logo, col_titulo = st.columns([2, 8])
 
 with col_logo:
-    st.image(LOGO_URL, width=80) # Logo pequeño arriba
+    # AUMENTADO: de 80 a 170
+    st.image(LOGO_URL, width=170) 
 with col_titulo:
     st.title("Sistema PAP: Colaborativo")
 
@@ -376,4 +377,3 @@ with tab5:
                 )
             except Exception as e:
                 st.error(f"Error: {e}")
-
