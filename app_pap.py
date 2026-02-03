@@ -36,18 +36,26 @@ st.markdown(estilos_css, unsafe_allow_html=True)
 # 📖 DICCIONARIO INTELIGENTE
 # ==========================================
 DICCIONARIO_CORRECTO = {
+    # GESTIÓN
     "gestion": "Gestión", "gestión": "Gestión",
-    "comunicacion": "Comunicación", "comunicasion": "Comunicación", "comunica": "Comunicación",
-    "infraestructura": "Infraestructura", "infra": "Infraestructura",
-    "investigacion": "Investigación", "investigasion": "Investigación",
-    "difusion": "Difusión", "difucion": "Difusión",
-    "vinculacion": "Vinculación", "vinc": "Vinculación",
+    "administracion": "Administración", "admin": "Administración",
     "financiamiento": "Financiamiento", "finanza": "Financiamiento",
+    "vinculacion": "Vinculación", "vinc": "Vinculación",
+    
+    # COMUNICACIÓN
+    "comunicacion": "Comunicación", "comunicasion": "Comunicación", "comunica": "Comunicación",
     "diseno": "Diseño", "diseño": "Diseño",
-    "arquitectonico": "Arquitectónico", "arquitectura": "Arquitectónico",
+    "difusion": "Difusión", "difucion": "Difusión",
+    "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo",
+    
+    # INFRAESTRUCTURA
+    "infraestructura": "Infraestructura", "infra": "Infraestructura",
+    "arquitectonico": "Diseño arquitectónico", "arquitectura": "Diseño arquitectónico",
     "mantenimiento": "Mantenimiento",
-    "teatrales": "Productos teatrales", "productos": "Productos teatrales", "producto": "Productos teatrales", "productos teatrales": "Productos teatrales",
-    "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo"
+    "teatrales": "Productos teatrales", "productos": "Productos teatrales", "producto": "Productos teatrales",
+    
+    # INVESTIGACIÓN (Categoría Principal)
+    "investigacion": "Investigación", "investigasion": "Investigación"
 }
 
 def normalizar_comparacion(texto):
@@ -68,21 +76,32 @@ def limpiar_textos(texto_sucio):
                 encontrado = True
                 break
         if not encontrado:
-            palabras_corregidas.append(p.capitalize()) 
+            palabras_corregidas.append(p.strip()) 
     return ", ".join(sorted(list(dict.fromkeys(palabras_corregidas))))
 
 # ==========================================
 # 🔗 CONFIGURACIÓN SISTEMA
 # ==========================================
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
+
+# AQUÍ ESTÁ INVESTIGACIÓN COMO CATEGORÍA PRINCIPAL
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
-SUBCATEGORIAS_SUGERIDAS = ["Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Memoria/archivo PAP", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
+
+SUBCATEGORIAS_SUGERIDAS = [
+    "Administración", "Financiamiento", "Vinculación", 
+    "Memoria/archivo CEDRAM", "Memoria/archivo PAP", "Diseño", "Difusión", 
+    "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"
+]
+
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(sheet_name):
     try:
         df = conn.read(worksheet=sheet_name, ttl=5)
-        if not df.empty: df.columns = df.columns.str.strip()
+        if not df.empty: 
+            df.columns = df.columns.str.strip() 
+            if "Periodo" in df.columns:
+                df["Periodo"] = df["Periodo"].astype(str).str.strip().str.title()
         return df
     except: return pd.DataFrame()
 
@@ -93,7 +112,6 @@ def save_data(df, sheet_name):
     except Exception as e: st.error(f"Error al guardar: {e}")
 
 def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF"):
-    # Habilitamos menu de descarga en la grafica
     chart = alt.Chart(df).mark_bar(color=color_barra).encode(
         x=alt.X(x_col, title=titulo_x, sort='-y'),
         y=alt.Y(y_col, title=titulo_y),
@@ -107,6 +125,7 @@ if "borradores" not in st.session_state: st.session_state.borradores = {}
 if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
 if "proyecto_activo_masivo" not in st.session_state: st.session_state.proyecto_activo_masivo = None
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = pd.DataFrame()
+if "stats_download" not in st.session_state: st.session_state.stats_download = {}
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -182,7 +201,7 @@ with tab2:
             st.session_state.proyecto_activo_masivo = proy_sel
 
         edited_df = st.data_editor(st.session_state.df_buffer_masivo, num_rows="dynamic", key="editor_masivo", use_container_width=True,
-            column_config={"Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"), "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True), "Contenido": st.column_config.TextColumn("Contenido", width="large")})
+            column_config={"Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"), "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True), "Contenido": st.column_config.TextColumn("Contenido", width="large")})
         
         if not edited_df.equals(st.session_state.df_buffer_masivo): st.session_state.df_buffer_masivo = edited_df
 
@@ -213,26 +232,23 @@ with tab3:
         if "Categoría" in df_proy.columns: df_proy["Categoría"] = df_proy["Categoría"].apply(limpiar_textos)
         if not df_ent.empty: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
 
-        # Filtros (SIN DEFAULT PARA EVITAR QUE SE REINICIEN SOLOS)
         cats_f = set(); subs_f = set()
         for c in df_proy["Categoría"].dropna(): cats_f.update([limpiar_textos(x) for x in str(c).split(',')])
         if not df_ent.empty: 
             for s in df_ent["Subcategoría"].dropna(): subs_f.update([limpiar_textos(x) for x in str(s).split(',')])
 
         c0, c1, c2, c3, c4 = st.columns(5)
-        # NOTA: Quitamos el 'default' para que el filtro sea estricto y no se llene solo
-        f_nom = c0.multiselect("🔍 Proyecto:", sorted(df_proy["Nombre del Proyecto"].unique()))
-        f_ano = c1.multiselect("Año:", sorted(df_proy["Año"].unique()))
-        f_per = c2.multiselect("Periodo:", ["Primavera", "Verano", "Otoño"])
-        f_cat = c3.multiselect("Categoría:", sorted(list(cats_f)))
-        f_sub = c4.multiselect("Subcategoría:", sorted(list(subs_f)))
+        f_nom = c0.multiselect("🔍 Proyecto:", sorted(df_proy["Nombre del Proyecto"].unique()), key="f_p3_nom")
+        f_ano = c1.multiselect("Año:", sorted(df_proy["Año"].unique()), key="f_p3_ano")
+        f_per = c2.multiselect("Periodo:", ["Primavera", "Verano", "Otoño"], key="f_p3_per")
+        f_cat = c3.multiselect("Categoría:", sorted(list(cats_f)), key="f_p3_cat")
+        f_sub = c4.multiselect("Subcategoría:", sorted(list(subs_f)), key="f_p3_sub")
 
         df_v = df_proy.copy(); df_ev = df_ent.copy() if not df_ent.empty else pd.DataFrame()
 
-        # LOGICA DE FILTRADO ESTRICTA
         if f_nom: df_v = df_v[df_v["Nombre del Proyecto"].isin(f_nom)]
         if f_ano: df_v = df_v[df_v["Año"].isin(f_ano)]
-        if f_per: df_v = df_v[df_v["Periodo"].isin(f_per)]
+        if f_per: df_v = df_v[df_v["Periodo"].astype(str).str.strip().isin(f_per)]
         if f_cat: df_v = df_v[df_v["Categoría"].apply(lambda x: any(limpiar_textos(c) in f_cat for c in str(x).split(',')))]
         if f_sub and not df_ev.empty:
             df_ev = df_ev[df_ev["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))]
@@ -277,7 +293,7 @@ with tab3:
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
-    st.info("ℹ️ **Tip:** Pasa el mouse sobre cualquier gráfica y haz clic en los **tres puntitos (...)** arriba a la derecha para descargarla como imagen (PNG/SVG).")
+    st.info("ℹ️ **Tip:** Usa los tres puntitos sobre la gráfica para descargar imagen.")
     
     try: df_p_s = load_data("Proyectos"); df_e_s = load_data("Entregables")
     except: df_p_s = pd.DataFrame(); df_e_s = pd.DataFrame()
@@ -292,14 +308,14 @@ with tab4:
             for s in df_e_s["Subcategoría"].dropna(): subs_g.update([x.strip() for x in str(s).split(',') if x.strip()])
 
         c1, c2, c3, c4 = st.columns(4)
-        yg = c1.multiselect("Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()))
-        pg = c2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"])
-        cg = c3.multiselect("Categoría", sorted(list(cats_g)))
-        sg = c4.multiselect("Subcategoría", sorted(list(subs_g)))
+        yg = c1.multiselect("Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()), key="g_year")
+        pg = c2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="g_per")
+        cg = c3.multiselect("Categoría", sorted(list(cats_g)), key="g_cat")
+        sg = c4.multiselect("Subcategoría", sorted(list(subs_g)), key="g_sub")
 
         df_f = df_p_s.copy()
         if yg: df_f = df_f[df_f["Año"].isin(yg)]
-        if pg: df_f = df_f[df_f["Periodo"].isin(pg)]
+        if pg: df_f = df_f[df_f["Periodo"].astype(str).str.strip().isin(pg)]
         if cg: df_f = df_f[df_f["Categoría"].apply(lambda x: any(item in cg for item in str(x).split(', ')))]
 
         df_e_f = df_e_s.copy() if not df_e_s.empty else pd.DataFrame()
@@ -358,7 +374,6 @@ with tab4:
                 data_s = ss.value_counts().reset_index(); data_s.columns=["Subcategoría", "Total"]
                 graficar_oscuro(data_s, "Subcategoría", "Total", "Subcategoría", "Total", "#CCCCCC")
 
-            # --- PREPARACIÓN DE DATOS PARA DESCARGAR ESTADÍSTICAS ---
             st.session_state.stats_download = {
                 "Resumen_Anual": df_chart if 'df_chart' in locals() else pd.DataFrame(),
                 "Por_Periodo": data_p if 'data_p' in locals() else pd.DataFrame(),
@@ -367,7 +382,7 @@ with tab4:
             }
 
 # ==========================================
-# PESTAÑA 5: DESCARGAS (MEJORADA)
+# PESTAÑA 5: DESCARGAS
 # ==========================================
 with tab5:
     st.header("📥 Centro de Descargas")
@@ -382,19 +397,17 @@ with tab5:
 
     st.markdown("---")
     st.subheader("2. Reporte de Gráficas (Datos)")
-    st.info("Descarga los números y tablas que generaron las gráficas actuales para tus reportes.")
-    
-    if "stats_download" in st.session_state and not st.session_state.stats_download["Resumen_Anual"].empty:
-        if st.button("Generar Reporte Estadístico (Excel)"):
+    if "stats_download" in st.session_state and not st.session_state.stats_download.get("Resumen_Anual", pd.DataFrame()).empty:
+        if st.button("Generar Reporte Estadístico"):
             b_stats = io.BytesIO()
             with pd.ExcelWriter(b_stats, engine='openpyxl') as w:
                 st.session_state.stats_download["Resumen_Anual"].to_excel(w, "Resumen Anual", index=False)
                 st.session_state.stats_download["Por_Periodo"].to_excel(w, "Por Periodo", index=False)
                 st.session_state.stats_download["Por_Categoría"].to_excel(w, "Por Categoría", index=False)
                 st.session_state.stats_download["Por_Subcategoría"].to_excel(w, "Por Subcategoría", index=False)
-            st.download_button("⬇️ Descargar Reporte_Estadístico.xlsx", b_stats.getvalue(), "Reporte_Graficas.xlsx")
+            st.download_button("⬇️ Descargar Reporte_Graficas.xlsx", b_stats.getvalue(), "Reporte_Graficas.xlsx")
     else:
-        st.caption("Ve a la pestaña de Gráficas para generar datos primero.")
+        st.warning("⚠️ Primero ve a la pestaña 'Gráficas' para generar los datos.")
 
 # ==========================================
 # PESTAÑA 6: GLOSARIO
@@ -403,19 +416,24 @@ with tab6:
     st.header("📖 Glosario de Términos")
     st.markdown("""
     ### 🗂️ Categorías
-    * **Gestión:** Dirección integral, presupuestos, cronogramas.
-    * **Comunicación:** Mensajes, branding, redes sociales, memoria.
-    * **Infraestructura:** Instalaciones, planos, señalética, equipo técnico.
-    * **Investigación:** História, mapeos, análisis de públicos.
+    * **Gestión:** Archivos que tengan que ver con la Dirección integral del proyecto.
+    * **Comunicación:** Diseño y ejecución de mensajes, canales para alinear a internos/externos.
+    * **Infraestructura:** Instalaciones fijas y móviles, planos arquitectónicos, señalética.
+    * **Investigación:** História de la finca, del CEDRAM, mapeos de la zona.
+    
     ### 📂 Subcategorías
+    
     #### 🔹 GESTIÓN
-    * **Administración:** Cronogramas, planificación.
+    * **Administración:** Cronogramas, necesidades, planificación.
     * **Financiamiento:** Becas, presupuestos, donantes.
-    * **Vinculación:** Relaciones públicas, alianzas.
+    * **Vinculación:** Contacto, relaciones públicas, alianzas.
+    
     #### 🔹 COMUNICACIÓN
-    * **Memoria/archivo:** Fotos y videos (CEDRAM/PAP).
-    * **Diseño:** Identidad visual, folletos, posters.
-    * **Difusión:** Redes sociales, campañas.
+    * **Memoria/archivo CEDRAM:** Archivos de memoria del equipo del CEDRAM.
+    * **Memoria/archivo PAP:** Archivos de memoria del equipo del PAP.
+    * **Diseño:** Identidad visual, folletos, pósters.
+    * **Difusión:** Redes sociales, campañas, impacto.
+    
     #### 🔹 INFRAESTRUCTURA
     * **Diseño arquitectónico:** Planos, renders, conceptos.
     * **Mantenimiento:** Señalética, remodelación.
