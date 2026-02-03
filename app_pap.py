@@ -35,7 +35,6 @@ estilos_css = f"""
     .vega-embed svg text {{
         fill: white !important;
     }}
-    /* Ajuste para expanders */
     .streamlit-expanderHeader {{
         background-color: #262730;
         color: white;
@@ -216,7 +215,7 @@ with tab2:
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3 (TABLAS EN ACORDEÓN / EXPANDER)
+# PESTAÑA 3
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
@@ -226,11 +225,9 @@ with tab3:
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
-        # Autocorrección visual
         if "Categoría" in df_proy.columns: df_proy["Categoría"] = df_proy["Categoría"].apply(limpiar_textos)
         if not df_ent.empty and "Subcategoría" in df_ent.columns: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
 
-        # Filtros
         todas_cats = set(); todas_subs = set()
         for c in df_proy["Categoría"].dropna(): todas_cats.update([limpiar_textos(x) for x in str(c).split(',')])
         if not df_ent.empty: 
@@ -286,7 +283,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4 (CORREGIDA PARA EL VALUE ERROR)
+# PESTAÑA 4 (GRÁFICAS CORREGIDAS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -330,25 +327,16 @@ with tab4:
                     ea = ev["Año_R"].value_counts().reset_index(); ea.columns=["Año","Total"]; ea["Tipo"]="Entregables"
                 else: ea = pd.DataFrame()
                 
-                # --- SOLUCIÓN AL ERROR DE FACET ---
-                df_chart = pd.concat([pa, ea]) # 1. Unimos datos primero
+                # --- CORRECCIÓN FACET ---
+                df_chart = pd.concat([pa, ea])
                 base = alt.Chart(df_chart).encode(
-                    x=alt.X('Tipo:N', title=None, axis=None),
-                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                    x=alt.X('Tipo:N', axis=None),
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']))
                 )
-                bars = base.mark_bar(size=35, cornerRadius=5).encode(y=alt.Y('Total:Q', title='Total'))
-                text = base.mark_text(dy=-10, color='white').encode(y=alt.Y('Total:Q'), text=alt.Text('Total:Q'))
-                
-                # 2. Layer, Properties y Facet en orden correcto
-                chart = alt.layer(bars, text).properties(
-                    width=100, 
-                    height=250
-                ).facet(
-                    column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))
-                ).configure_view(stroke='transparent')
-                
+                bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
+                text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text='Total:Q')
+                chart = alt.layer(bars, text).properties(width=100, height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
                 st.altair_chart(chart)
-                
             else: st.info("Registra más años para ver la evolución.")
 
             st.markdown("---")
@@ -362,17 +350,20 @@ with tab4:
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Por Periodo")
-                graficar_oscuro(df_f["Periodo"].value_counts().reset_index().rename(columns={"index":"Periodo","Periodo":"Cantidad"}), "Periodo", "count", "Periodo", "Total", "#FFFFFF")
+                data_p = df_f["Periodo"].value_counts().reset_index(); data_p.columns=["Periodo", "Total"]
+                graficar_oscuro(data_p, "Periodo", "Total", "Periodo", "Total", "#FFFFFF")
             with c2:
                 st.subheader("Por Categoría")
                 sc = df_f["Categoría"].str.split(',').explode().str.strip(); sc=sc[sc!=""]; sc=sc[sc!="Nan"]
-                graficar_oscuro(sc.value_counts().reset_index().rename(columns={"index":"Categoría","Categoría":"Cantidad"}), "Categoría", "count", "Categoría", "Total", "#E0E0E0")
+                data_c = sc.value_counts().reset_index(); data_c.columns=["Categoría", "Total"]
+                graficar_oscuro(data_c, "Categoría", "Total", "Categoría", "Total", "#E0E0E0")
             
             st.markdown("---")
             st.subheader("📦 Subcategorías")
             if not ev_final.empty:
                 ss = ev_final["Subcategoría"].str.split(',').explode().str.strip(); ss=ss[ss!=""]; ss=ss[ss!="Nan"]
-                graficar_oscuro(ss.value_counts().reset_index().rename(columns={"index":"Subcategoría","Subcategoría":"Cantidad"}), "Subcategoría", "count", "Subcategoría", "Total", "#CCCCCC")
+                data_s = ss.value_counts().reset_index(); data_s.columns=["Subcategoría", "Total"]
+                graficar_oscuro(data_s, "Subcategoría", "Total", "Subcategoría", "Total", "#CCCCCC")
 
 # ==========================================
 # PESTAÑA 5
