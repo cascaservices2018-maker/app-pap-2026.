@@ -104,9 +104,9 @@ with st.sidebar:
 col_logo, col_titulo = st.columns([2, 8])
 
 with col_logo:
-    st.image(LOGO_URL, width=170) 
+    st.image(LOGO_URL, width=100) 
 with col_titulo:
-    st.title("Sistema PAP: Colaborativo")
+    st.title("Base de datos PAP PERIODOS 2019-2026")
 
 st.markdown("---")
 
@@ -430,3 +430,4 @@ with tab5:
                 )
             except Exception as e:
                 st.error(f"Error: {e}")
+
