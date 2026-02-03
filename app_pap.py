@@ -31,7 +31,6 @@ estilos_css = f"""
     [data-testid="stMetricValue"], h1, h2, h3, p {{
         color: white !important;
     }}
-    /* Ajuste para que los subtítulos de las gráficas se vean blancos */
     .vega-embed svg text {{
         fill: white !important;
     }}
@@ -219,7 +218,7 @@ with tab2:
                 except Exception as e: st.error(f"Error al guardar: {e}")
 
 # ==========================================
-# PESTAÑA 3: BUSCAR Y EDITAR
+# PESTAÑA 3
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
@@ -240,11 +239,9 @@ with tab3:
                 todas_subs.update([x.strip().capitalize() for x in str(s).split(',')])
 
         c_nom, c1, c2, c3, c4 = st.columns(5)
-        
         with c_nom: 
             lista_nombres = sorted(df_proy["Nombre del Proyecto"].unique().tolist())
             f_nombre = st.multiselect("🔍 Filtrar Proyecto:", lista_nombres)
-        
         with c1: f_year = st.multiselect("Filtrar Año:", sorted(df_proy["Año"].unique()))
         with c2: f_period = st.multiselect("Filtrar Periodo:", ["Primavera", "Verano", "Otoño"])
         with c3: f_cat = st.multiselect("Filtrar Categoría:", sorted(list(todas_cats)))
@@ -256,11 +253,9 @@ with tab3:
         if f_nombre: df_view = df_view[df_view["Nombre del Proyecto"].isin(f_nombre)]
         if f_year: df_view = df_view[df_view["Año"].isin(f_year)]
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
-        
         if f_cat:
             mask_cat = df_view["Categoría"].apply(lambda x: any(item in [c.strip().capitalize() for c in str(x).split(',')] for item in f_cat))
             df_view = df_view[mask_cat]
-        
         if f_sub and not df_ent_view.empty:
             mask_sub = df_ent_view["Subcategoría"].apply(lambda x: any(item in [s.strip().capitalize() for s in str(x).split(',')] for item in f_sub))
             df_ent_view = df_ent_view[mask_sub]
@@ -282,10 +277,8 @@ with tab3:
 
         st.subheader("2. Entregables Asociados")
         if not df_ent.empty:
-            if f_sub: 
-                df_ent_final = df_ent_view[df_ent_view["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
-            else: 
-                df_ent_final = df_ent[df_ent["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
+            if f_sub: df_ent_final = df_ent_view[df_ent_view["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
+            else: df_ent_final = df_ent[df_ent["Proyecto_Padre"].isin(df_view["Nombre del Proyecto"].unique())]
             
             if not df_ent_final.empty:
                 edited_ent = st.data_editor(df_ent_final, use_container_width=True, key="editor_entregables_main", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
@@ -313,7 +306,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4 (GRÁFICAS + NUEVA GRÁFICA ANUAL)
+# PESTAÑA 4 (GRÁFICAS - AHORA CON BARRAS ESTILIZADAS Y NÚMEROS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -321,6 +314,7 @@ with tab4:
     except: df_p_s = pd.DataFrame(); df_e_s = pd.DataFrame()
 
     if not df_p_s.empty and "Año" in df_p_s.columns:
+        # Filtros
         cats_graph = set()
         if "Categoría" in df_p_s.columns:
             for c in df_p_s["Categoría"].dropna(): cats_graph.update([x.strip().capitalize() for x in str(c).split(',')])
@@ -350,47 +344,60 @@ with tab4:
         if df_f.empty: st.warning("No hay datos con esos filtros.")
         else:
             st.markdown("---")
-            # --- NUEVA GRÁFICA EVOLUCIÓN ANUAL ---
+            # --- EVOLUCIÓN ANUAL (BARRA ESTILIZADA + NÚMERO) ---
             st.subheader("📅 Evolución Anual (Proyectos vs Entregables)")
-            
-            # 1. Contar proyectos por año
             p_anios = df_f["Año"].value_counts().reset_index(); p_anios.columns=["Año", "Total"]; p_anios["Tipo"]="Proyectos"
             
-            # 2. Contar entregables por año (asociados a proyectos filtrados)
             visibles = df_f["Nombre del Proyecto"].unique()
             if not df_e_s.empty:
-                # Usamos df_e_f si hubo filtro de subcategoría, si no, usamos todos los de los proyectos visibles
                 if sub_g: e_validos = df_e_f[df_e_f["Proyecto_Padre"].isin(visibles)]
                 else: e_validos = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
                 
-                # Necesitamos saber el año del proyecto padre para agrupar
                 mapa_anios = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
                 e_validos["Año_Real"] = e_validos["Proyecto_Padre"].map(mapa_anios)
-                # Filtramos los que tengan año válido (por si acaso)
                 e_validos = e_validos.dropna(subset=["Año_Real"])
-                
                 e_anios = e_validos["Año_Real"].value_counts().reset_index(); e_anios.columns=["Año", "Total"]; e_anios["Tipo"]="Entregables"
-            else:
-                e_anios = pd.DataFrame()
+            else: e_anios = pd.DataFrame()
 
             df_chart_anual = pd.concat([p_anios, e_anios], ignore_index=True)
             
             if not df_chart_anual.empty:
-                # Gráfica agrupada por Año con colores blanco y amarillo
-                chart_anual = alt.Chart(df_chart_anual).mark_bar().encode(
+                # GRAFICA MEJORADA CON NÚMEROS
+                base = alt.Chart(df_chart_anual).encode(
                     x=alt.X('Tipo:N', title=None, axis=None),
-                    y=alt.Y('Total:Q', title='Total'),
-                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white")),
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                )
+                
+                # Capa 1: Barras estilizadas
+                bars = base.mark_bar(size=35, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                    y=alt.Y('Total:Q', title='Total')
+                )
+                
+                # Capa 2: Texto con los números (arriba de la barra para que se lea)
+                text = base.mark_text(dy=-10, color='white').encode(
+                    y=alt.Y('Total:Q'),
+                    text=alt.Text('Total:Q')
+                )
+                
+                # Combinamos
+                chart_anual = alt.layer(bars, text).encode(
                     column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white", titleOrient="bottom", labelOrient="bottom"))
                 ).configure_view(stroke='transparent').properties(height=250)
+                
                 st.altair_chart(chart_anual, use_container_width=True)
-
             st.markdown("---")
             
-            # --- KPIs Y GRÁFICAS ANTERIORES ---
+            # --- KPIs Y OTRAS GRÁFICAS ---
             k1, k2 = st.columns(2)
             k1.metric("Proyectos Filtrados", len(df_f))
-            k2.metric("Entregables Asociados", len(e_validos) if not df_e_s.empty else 0)
+            
+            visibles = df_f["Nombre del Proyecto"].unique()
+            if not df_e_s.empty:
+                if not sub_g: df_e_final_graph = df_e_s[df_e_s["Proyecto_Padre"].isin(visibles)]
+                else: df_e_final_graph = df_e_f[df_e_f["Proyecto_Padre"].isin(visibles)]
+            else: df_e_final_graph = pd.DataFrame()
+
+            k2.metric("Entregables Asociados", len(df_e_final_graph))
 
             st.markdown("---")
             c1, c2 = st.columns(2)
@@ -407,8 +414,8 @@ with tab4:
                     graficar_oscuro(dc, "Categoría", "Cantidad", "Categoría", "Total", "#E0E0E0")
             st.markdown("---")
             st.subheader("📦 Subcategorías")
-            if not df_e_s.empty and "Subcategoría" in e_validos.columns:
-                 ss = e_validos["Subcategoría"].astype(str).str.split(',').explode().str.strip().str.capitalize()
+            if not df_e_final_graph.empty and "Subcategoría" in df_e_final_graph.columns:
+                 ss = df_e_final_graph["Subcategoría"].astype(str).str.split(',').explode().str.strip().str.capitalize()
                  ss = ss[ss != "Nan"]; ss = ss[ss != ""]
                  ds = ss.value_counts().reset_index(); ds.columns=["Subcategoría","Cantidad"]
                  graficar_oscuro(ds, "Subcategoría", "Cantidad", "Subcategoría", "Total", "#CCCCCC")
