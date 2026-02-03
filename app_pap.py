@@ -18,61 +18,36 @@ st.set_page_config(
 # ==========================================
 # 🎨 PERSONALIZACIÓN DE COLORES (CSS)
 # ==========================================
-COLOR_FONDO_PRINCIPAL = "#A60000"  # Rojo Institucional
-COLOR_BARRA_LATERAL = "#262730"    # Gris oscuro
+COLOR_FONDO_PRINCIPAL = "#A60000"
+COLOR_BARRA_LATERAL = "#262730"
 
 estilos_css = f"""
 <style>
-    .stApp {{
-        background-color: {COLOR_FONDO_PRINCIPAL};
-    }}
-    [data-testid="stSidebar"] {{
-        background-color: {COLOR_BARRA_LATERAL};
-    }}
-    [data-testid="stMetricValue"], h1, h2, h3, p, li {{
-        color: white !important;
-    }}
-    .vega-embed svg text {{
-        fill: white !important;
-    }}
-    .streamlit-expanderHeader {{
-        background-color: #262730;
-        color: white;
-    }}
+    .stApp {{ background-color: {COLOR_FONDO_PRINCIPAL}; }}
+    [data-testid="stSidebar"] {{ background-color: {COLOR_BARRA_LATERAL}; }}
+    [data-testid="stMetricValue"], h1, h2, h3, p, li {{ color: white !important; }}
+    .vega-embed svg text {{ fill: white !important; }}
+    .streamlit-expanderHeader {{ background-color: #262730; color: white; }}
 </style>
 """
 st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 DICCIONARIO INTELIGENTE (CORRECTOR)
+# 📖 DICCIONARIO INTELIGENTE
 # ==========================================
 DICCIONARIO_CORRECTO = {
-    "gestion": "Gestión",
-    "gestión": "Gestión",
-    "comunicacion": "Comunicación",
-    "comunicasion": "Comunicación",
-    "comunica": "Comunicación",
-    "infraestructura": "Infraestructura",
-    "infra": "Infraestructura",
-    "investigacion": "Investigación",
-    "investigasion": "Investigación",
-    "difusion": "Difusión",
-    "difucion": "Difusión",
-    "vinculacion": "Vinculación",
-    "vinc": "Vinculación",
-    "financiamiento": "Financiamiento",
-    "finanza": "Financiamiento",
-    "diseno": "Diseño",
-    "diseño": "Diseño",
-    "arquitectonico": "Arquitectónico",
-    "arquitectura": "Arquitectónico",
+    "gestion": "Gestión", "gestión": "Gestión",
+    "comunicacion": "Comunicación", "comunicasion": "Comunicación", "comunica": "Comunicación",
+    "infraestructura": "Infraestructura", "infra": "Infraestructura",
+    "investigacion": "Investigación", "investigasion": "Investigación",
+    "difusion": "Difusión", "difucion": "Difusión",
+    "vinculacion": "Vinculación", "vinc": "Vinculación",
+    "financiamiento": "Financiamiento", "finanza": "Financiamiento",
+    "diseno": "Diseño", "diseño": "Diseño",
+    "arquitectonico": "Arquitectónico", "arquitectura": "Arquitectónico",
     "mantenimiento": "Mantenimiento",
-    "teatrales": "Productos teatrales",
-    "productos": "Productos teatrales",
-    "producto": "Productos teatrales",
-    "productos teatrales": "Productos teatrales",
-    "memoria": "Memoria/Archivo",
-    "archivo": "Memoria/Archivo"
+    "teatrales": "Productos teatrales", "productos": "Productos teatrales", "producto": "Productos teatrales", "productos teatrales": "Productos teatrales",
+    "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo"
 }
 
 def normalizar_comparacion(texto):
@@ -97,15 +72,11 @@ def limpiar_textos(texto_sucio):
     return ", ".join(sorted(list(dict.fromkeys(palabras_corregidas))))
 
 # ==========================================
-# 🔗 CONFIGURACIÓN DEL SISTEMA
+# 🔗 CONFIGURACIÓN SISTEMA
 # ==========================================
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
-SUBCATEGORIAS_SUGERIDAS = [
-    "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", 
-    "Memoria/archivo PAP", "Diseño", "Difusión", 
-    "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"
-]
+SUBCATEGORIAS_SUGERIDAS = ["Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Memoria/archivo PAP", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(sheet_name):
@@ -119,9 +90,10 @@ def save_data(df, sheet_name):
     try:
         conn.update(worksheet=sheet_name, data=df)
         st.cache_data.clear()
-    except Exception as e: st.error(f"No se pudo guardar: {e}")
+    except Exception as e: st.error(f"Error al guardar: {e}")
 
 def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF"):
+    # Habilitamos menu de descarga en la grafica
     chart = alt.Chart(df).mark_bar(color=color_barra).encode(
         x=alt.X(x_col, title=titulo_x, sort='-y'),
         y=alt.Y(y_col, title=titulo_y),
@@ -129,15 +101,14 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
     st.altair_chart(chart, use_container_width=True)
 
-# --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
+# --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
 if "borradores" not in st.session_state: st.session_state.borradores = {}
+if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
 if "proyecto_activo_masivo" not in st.session_state: st.session_state.proyecto_activo_masivo = None
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = pd.DataFrame()
-# NUEVA VARIABLE: Para recordar qué proyecto acabas de crear
-if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
 
-# --- INTERFAZ ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.image(LOGO_URL, width=280) 
     st.markdown("### ⚙️ Panel de Control")
@@ -150,14 +121,7 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "1. Registrar PROYECTO", 
-    "2. Carga Masiva ENTREGABLES", 
-    "3. 📝 Buscar y Editar", 
-    "4. 📊 Gráficas", 
-    "5. 📥 Descargar Excel",
-    "6. 📖 Glosario"
-])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas", "5. 📥 Descargas", "6. Glosario"])
 
 # ==========================================
 # PESTAÑA 1: REGISTRO
@@ -167,163 +131,105 @@ with tab1:
     with st.form("form_proyecto", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
         semilla = st.session_state.form_seed
-        
         anio = c1.number_input("Año", 2019, 2030, datetime.now().year, key=f"anio_{semilla}")
         periodo = c2.selectbox("Periodo", ["Primavera", "Verano", "Otoño"], key=f"periodo_{semilla}")
         cats = c3.multiselect("Categoría(s)", CATEGORIAS_LISTA, key=f"cats_{semilla}")
-        
         nombre = st.text_input("Nombre del Proyecto", key=f"nombre_{semilla}")
         desc = st.text_area("Descripción", key=f"desc_{semilla}")
-        
         ce, cc = st.columns(2)
         num_ent = ce.number_input("Estimado Entregables", 1, step=1, key=f"num_{semilla}")
         comen = cc.text_area("Comentarios", key=f"comen_{semilla}")
 
         if st.form_submit_button("💾 Guardar Proyecto"):
-            if not nombre: 
-                st.error("⚠️ El nombre es obligatorio.")
-            elif not cats: 
-                st.error("⚠️ Debes elegir al menos una categoría.")
+            if not nombre: st.error("⚠️ El nombre es obligatorio.")
+            elif not cats: st.error("⚠️ Elige categoría.")
             else:
                 df = load_data("Proyectos")
                 if not df.empty and "Nombre del Proyecto" in df.columns and nombre in df["Nombre del Proyecto"].values:
-                    st.warning("⚠️ Ya existe un proyecto con ese nombre.")
+                    st.warning("⚠️ Ya existe.")
                 else:
-                    nuevo = {
-                        "Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre,
-                        "Descripción": desc, "Num_Entregables": num_ent,
-                        "Categoría": limpiar_textos(", ".join(cats)),
-                        "Comentarios": comen,
-                        "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
+                    nuevo = {"Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre, "Descripción": desc, "Num_Entregables": num_ent, "Categoría": limpiar_textos(", ".join(cats)), "Comentarios": comen, "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                     save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
-                    st.success("¡Proyecto guardado con éxito!")
-                    
-                    # --- GUARDAMOS EL NOMBRE DEL PROYECTO PARA LA PESTAÑA 2 ---
+                    st.success("¡Guardado!")
                     st.session_state.proy_recien_creado = nombre
-                    
                     st.session_state.form_seed += 1
-                    time.sleep(1)
-                    st.rerun()
+                    time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (AUTO-SELECCIÓN)
+# PESTAÑA 2: CARGA MASIVA
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Estabilidad:** Puedes copiar y pegar desde Excel sin que se borren los datos.")
-    
+    st.info("💡 **Memoria Estable:** Cambios guardados solo al presionar el botón.")
     df_p = load_data("Proyectos")
-    if df_p.empty: st.warning("Cargando proyectos...")
+    if df_p.empty: st.warning("Cargando...")
     elif "Nombre del Proyecto" in df_p.columns:
+        lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
+        idx = lista_proy.index(st.session_state.proy_recien_creado) if st.session_state.proy_recien_creado in lista_proy else 0
+        proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, index=idx)
         
-        lista_proyectos = sorted(df_p["Nombre del Proyecto"].unique().tolist())
-        
-        # --- LÓGICA DE AUTO-SELECCIÓN ---
-        indice_defecto = 0
-        if st.session_state.proy_recien_creado in lista_proyectos:
-            indice_defecto = lista_proyectos.index(st.session_state.proy_recien_creado)
-        
-        proy_sel = st.selectbox("Selecciona el Proyecto:", lista_proyectos, index=indice_defecto)
-        
-        info_p = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
-        cat_auto = info_p.get("Categoría", "General")
-        estimado = int(info_p.get("Num_Entregables", 5))
-        st.caption(f"Categoría: **{cat_auto}** | Espacios iniciales: **{estimado}**")
+        info = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
+        cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
+        st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
         if st.session_state.proyecto_activo_masivo != proy_sel:
             df_e = load_data("Entregables")
-            existentes = pd.DataFrame()
-            if not df_e.empty:
-                existentes = df_e[df_e["Proyecto_Padre"] == proy_sel]
-            
-            if not existentes.empty:
-                cols_utiles = ["Entregable", "Contenido", "Subcategoría", "Plantillas"]
-                datos_carga = existentes[cols_utiles].rename(columns={
-                    "Entregable": "Nombre_Entregable",
-                    "Subcategoría": "Subcategorías",
-                    "Plantillas": "Plantillas_Usadas"
-                })
-                st.session_state.df_buffer_masivo = datos_carga.fillna("").astype(str)
+            exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
+            if not exist.empty:
+                st.session_state.df_buffer_masivo = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(columns={"Entregable": "Nombre_Entregable", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"}).fillna("").astype(str)
             else:
-                st.session_state.df_buffer_masivo = pd.DataFrame(
-                    "", 
-                    index=range(estimado), 
-                    columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]
-                ).astype(str)
+                st.session_state.df_buffer_masivo = pd.DataFrame("", index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]).astype(str)
             st.session_state.proyecto_activo_masivo = proy_sel
 
-        st.write("👇 **Edita o agrega entregables:**")
-        edited_df = st.data_editor(
-            st.session_state.df_buffer_masivo, 
-            num_rows="dynamic",
-            key=f"editor_masivo_estable", 
-            use_container_width=True,
-            column_config={
-                "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", default="General", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
-                "Nombre_Entregable": st.column_config.TextColumn("Nombre Entregable", required=True),
-                "Contenido": st.column_config.TextColumn("Contenido", width="large"),
-                "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
-            }
-        )
+        edited_df = st.data_editor(st.session_state.df_buffer_masivo, num_rows="dynamic", key="editor_masivo", use_container_width=True,
+            column_config={"Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"), "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True), "Contenido": st.column_config.TextColumn("Contenido", width="large")})
         
-        if not edited_df.equals(st.session_state.df_buffer_masivo):
-            st.session_state.df_buffer_masivo = edited_df
+        if not edited_df.equals(st.session_state.df_buffer_masivo): st.session_state.df_buffer_masivo = edited_df
 
-        if st.button("🚀 Guardar Cambios (Reemplazar)"):
-            datos_validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
-            if datos_validos.empty: st.error("La tabla está vacía o no tiene nombres.")
+        if st.button("🚀 Guardar Cambios"):
+            validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
+            if validos.empty: st.error("Vacío.")
             else:
                 try:
-                    datos_validos["Subcategorías"] = datos_validos["Subcategorías"].apply(limpiar_textos)
-                    df_master = load_data("Entregables")
-                    if not df_master.empty:
-                        df_master = df_master[df_master["Proyecto_Padre"] != proy_sel]
-                    
-                    nuevas_filas = []
-                    fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    for index, row in datos_validos.iterrows():
-                        nuevas_filas.append({
-                            "Proyecto_Padre": proy_sel, "Entregable": row["Nombre_Entregable"],
-                            "Contenido": row["Contenido"], "Categoría": cat_auto,
-                            "Subcategoría": row["Subcategorías"], "Plantillas": row["Plantillas_Usadas"], "Fecha_Registro": fecha_hoy
-                        })
-                    
-                    df_final = pd.concat([df_master, pd.DataFrame(nuevas_filas)], ignore_index=True)
-                    save_data(df_final, "Entregables")
-                    st.success(f"¡Listo! Se actualizaron {len(nuevas_filas)} entregables.")
-                    st.balloons(); time.sleep(1); st.session_state.proyecto_activo_masivo = None; st.rerun()
-                except Exception as e: st.error(f"Error al guardar: {e}")
+                    validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
+                    df_m = load_data("Entregables")
+                    if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
+                    nuevos = []
+                    hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    for _, r in validos.iterrows():
+                        nuevos.append({"Proyecto_Padre": proy_sel, "Entregable": r["Nombre_Entregable"], "Contenido": r["Contenido"], "Categoría": cat, "Subcategoría": r["Subcategorías"], "Plantillas": r["Plantillas_Usadas"], "Fecha_Registro": hoy})
+                    save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
+                    st.success("¡Actualizado!"); st.session_state.proyecto_activo_masivo = None; time.sleep(1); st.rerun()
+                except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: EDICIÓN
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
-    st.info("💡 **Nota:** Datos corregidos automáticamente. Puedes editar **Año** y **Periodo**.")
-    
-    df_proy = load_data("Proyectos")
-    df_ent = load_data("Entregables")
+    df_proy = load_data("Proyectos"); df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
         if "Categoría" in df_proy.columns: df_proy["Categoría"] = df_proy["Categoría"].apply(limpiar_textos)
-        if not df_ent.empty and "Subcategoría" in df_ent.columns: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
+        if not df_ent.empty: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
 
-        todas_cats = set(); todas_subs = set()
-        for c in df_proy["Categoría"].dropna(): todas_cats.update([limpiar_textos(x) for x in str(c).split(',')])
+        # Filtros (SIN DEFAULT PARA EVITAR QUE SE REINICIEN SOLOS)
+        cats_f = set(); subs_f = set()
+        for c in df_proy["Categoría"].dropna(): cats_f.update([limpiar_textos(x) for x in str(c).split(',')])
         if not df_ent.empty: 
-            for s in df_ent["Subcategoría"].dropna(): todas_subs.update([limpiar_textos(x) for x in str(s).split(',')])
+            for s in df_ent["Subcategoría"].dropna(): subs_f.update([limpiar_textos(x) for x in str(s).split(',')])
 
         c0, c1, c2, c3, c4 = st.columns(5)
+        # NOTA: Quitamos el 'default' para que el filtro sea estricto y no se llene solo
         f_nom = c0.multiselect("🔍 Proyecto:", sorted(df_proy["Nombre del Proyecto"].unique()))
         f_ano = c1.multiselect("Año:", sorted(df_proy["Año"].unique()))
         f_per = c2.multiselect("Periodo:", ["Primavera", "Verano", "Otoño"])
-        f_cat = c3.multiselect("Categoría:", sorted(list(todas_cats)))
-        f_sub = c4.multiselect("Subcategoría:", sorted(list(todas_subs)))
+        f_cat = c3.multiselect("Categoría:", sorted(list(cats_f)))
+        f_sub = c4.multiselect("Subcategoría:", sorted(list(subs_f)))
 
-        df_v = df_proy.copy()
-        df_ev = df_ent.copy() if not df_ent.empty else pd.DataFrame()
+        df_v = df_proy.copy(); df_ev = df_ent.copy() if not df_ent.empty else pd.DataFrame()
 
+        # LOGICA DE FILTRADO ESTRICTA
         if f_nom: df_v = df_v[df_v["Nombre del Proyecto"].isin(f_nom)]
         if f_ano: df_v = df_v[df_v["Año"].isin(f_ano)]
         if f_per: df_v = df_v[df_v["Periodo"].isin(f_per)]
@@ -333,40 +239,30 @@ with tab3:
             df_v = df_v[df_v["Nombre del Proyecto"].isin(df_ev["Proyecto_Padre"].unique())]
 
         st.markdown("---")
-
         with st.expander(f"📂 1. Tabla de Proyectos ({len(df_v)})", expanded=True):
-            ed_p = st.data_editor(
-                df_v, use_container_width=True, key="ep", num_rows="fixed", 
-                column_config={
-                    "Categoría": st.column_config.TextColumn("Categoría(s)"),
-                    "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
-                    "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
-                }
-            )
-            if st.button("💾 Actualizar y Corregir Proyectos"):
+            ed_p = st.data_editor(df_v, use_container_width=True, key="ep", num_rows="fixed", column_config={
+                "Categoría": st.column_config.TextColumn("Categoría(s)"),
+                "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
+                "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
+            })
+            if st.button("💾 Actualizar Proyectos"):
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
-                df_master_proy = load_data("Proyectos")
-                df_master_proy.update(ed_p) 
-                save_data(df_master_proy, "Proyectos")
-                st.success("✅ Guardado. Año, Periodo y datos actualizados.")
+                df_master_proy = load_data("Proyectos"); df_master_proy.update(ed_p); save_data(df_master_proy, "Proyectos")
+                st.success("✅ Actualizado.")
 
-        with st.expander("📦 2. Tabla de Entregables Asociados", expanded=True):
+        with st.expander("📦 2. Entregables Asociados", expanded=True):
             if not df_ent.empty:
-                if f_sub: df_ef = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
-                else: df_ef = df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
-                
+                df_ef = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())] if f_sub else df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
                 if not df_ef.empty:
                     ed_e = st.data_editor(df_ef, use_container_width=True, key="ee", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
-                    if st.button("💾 Actualizar y Corregir Entregables"):
+                    if st.button("💾 Actualizar Entregables"):
                         if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
-                        df_master_ent = load_data("Entregables")
-                        df_master_ent.update(ed_e)
-                        save_data(df_master_ent, "Entregables")
-                        st.success("✅ Guardado.")
-                else: st.info("No hay entregables para esta selección.")
-            else: st.info("Base de datos vacía.")
+                        df_master_ent = load_data("Entregables"); df_master_ent.update(ed_e); save_data(df_master_ent, "Entregables")
+                        st.success("✅ Actualizado.")
+                else: st.info("Sin entregables.")
+            else: st.info("Vacío.")
 
-        with st.expander("🗑️ Zona de Borrado (Peligro)", expanded=False):
+        with st.expander("🗑️ Zona de Borrado", expanded=False):
             ops = df_v["Nombre del Proyecto"].unique()
             if len(ops) > 0:
                 d = st.selectbox("Eliminar:", ops)
@@ -381,6 +277,8 @@ with tab3:
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
+    st.info("ℹ️ **Tip:** Pasa el mouse sobre cualquier gráfica y haz clic en los **tres puntitos (...)** arriba a la derecha para descargarla como imagen (PNG/SVG).")
+    
     try: df_p_s = load_data("Proyectos"); df_e_s = load_data("Entregables")
     except: df_p_s = pd.DataFrame(); df_e_s = pd.DataFrame()
 
@@ -388,7 +286,6 @@ with tab4:
         if "Categoría" in df_p_s.columns: df_p_s["Categoría"] = df_p_s["Categoría"].apply(limpiar_textos)
         if not df_e_s.empty: df_e_s["Subcategoría"] = df_e_s["Subcategoría"].apply(limpiar_textos)
 
-        # Filtros
         cats_g = set(); subs_g = set()
         for c in df_p_s["Categoría"].dropna(): cats_g.update([x.strip() for x in str(c).split(',') if x.strip()])
         if not df_e_s.empty: 
@@ -400,7 +297,6 @@ with tab4:
         cg = c3.multiselect("Categoría", sorted(list(cats_g)))
         sg = c4.multiselect("Subcategoría", sorted(list(subs_g)))
 
-        # --- LÓGICA DE FILTRADO ADITIVA ---
         df_f = df_p_s.copy()
         if yg: df_f = df_f[df_f["Año"].isin(yg)]
         if pg: df_f = df_f[df_f["Periodo"].isin(pg)]
@@ -411,10 +307,10 @@ with tab4:
             df_e_f = df_e_f[df_e_f["Subcategoría"].apply(lambda x: any(item in sg for item in str(x).split(', ')))]
             df_f = df_f[df_f["Nombre del Proyecto"].isin(df_e_f["Proyecto_Padre"].unique())]
 
-        if df_f.empty: st.warning("Sin datos con estos filtros.")
+        if df_f.empty: st.warning("Sin datos.")
         else:
             st.markdown("---")
-            if df_f["Año"].nunique() > 0: 
+            if df_f["Año"].nunique() > 0:
                 st.subheader("📅 Evolución Anual / Resumen")
                 pa = df_f["Año"].value_counts().reset_index(); pa.columns=["Año","Total"]; pa["Tipo"]="Proyectos"
                 vis = df_f["Nombre del Proyecto"].unique()
@@ -462,15 +358,43 @@ with tab4:
                 data_s = ss.value_counts().reset_index(); data_s.columns=["Subcategoría", "Total"]
                 graficar_oscuro(data_s, "Subcategoría", "Total", "Subcategoría", "Total", "#CCCCCC")
 
+            # --- PREPARACIÓN DE DATOS PARA DESCARGAR ESTADÍSTICAS ---
+            st.session_state.stats_download = {
+                "Resumen_Anual": df_chart if 'df_chart' in locals() else pd.DataFrame(),
+                "Por_Periodo": data_p if 'data_p' in locals() else pd.DataFrame(),
+                "Por_Categoría": data_c if 'data_c' in locals() else pd.DataFrame(),
+                "Por_Subcategoría": data_s if 'data_s' in locals() else pd.DataFrame()
+            }
+
 # ==========================================
-# PESTAÑA 5
+# PESTAÑA 5: DESCARGAS (MEJORADA)
 # ==========================================
 with tab5:
-    st.header("📥 Exportar")
-    if st.button("Generar Excel"):
+    st.header("📥 Centro de Descargas")
+    
+    st.subheader("1. Base de Datos Completa")
+    if st.button("Generar Respaldo Completo (Excel)"):
         b = io.BytesIO()
-        with pd.ExcelWriter(b, engine='openpyxl') as w: load_data("Proyectos").to_excel(w, 'Proyectos', index=False); load_data("Entregables").to_excel(w, 'Entregables', index=False)
-        st.download_button("⬇️ Descargar", b.getvalue(), "Reporte.xlsx")
+        with pd.ExcelWriter(b, engine='openpyxl') as w: 
+            load_data("Proyectos").to_excel(w, 'Proyectos', index=False)
+            load_data("Entregables").to_excel(w, 'Entregables', index=False)
+        st.download_button("⬇️ Descargar BD.xlsx", b.getvalue(), "Respaldo_Completo.xlsx")
+
+    st.markdown("---")
+    st.subheader("2. Reporte de Gráficas (Datos)")
+    st.info("Descarga los números y tablas que generaron las gráficas actuales para tus reportes.")
+    
+    if "stats_download" in st.session_state and not st.session_state.stats_download["Resumen_Anual"].empty:
+        if st.button("Generar Reporte Estadístico (Excel)"):
+            b_stats = io.BytesIO()
+            with pd.ExcelWriter(b_stats, engine='openpyxl') as w:
+                st.session_state.stats_download["Resumen_Anual"].to_excel(w, "Resumen Anual", index=False)
+                st.session_state.stats_download["Por_Periodo"].to_excel(w, "Por Periodo", index=False)
+                st.session_state.stats_download["Por_Categoría"].to_excel(w, "Por Categoría", index=False)
+                st.session_state.stats_download["Por_Subcategoría"].to_excel(w, "Por Subcategoría", index=False)
+            st.download_button("⬇️ Descargar Reporte_Estadístico.xlsx", b_stats.getvalue(), "Reporte_Graficas.xlsx")
+    else:
+        st.caption("Ve a la pestaña de Gráficas para generar datos primero.")
 
 # ==========================================
 # PESTAÑA 6: GLOSARIO
@@ -479,20 +403,19 @@ with tab6:
     st.header("📖 Glosario de Términos")
     st.markdown("""
     ### 🗂️ Categorías
-    * **Gestión:** Archivos que tengan que ver con la Dirección integral del proyecto.
-    * **Comunicación:** Diseño y ejecución de mensajes, canales para alinear a internos/externos.
-    * **Infraestructura:** Instalaciones fijas y móviles, planos arquitectónicos, señalética.
-    * **Investigación:** História de la finca, del CEDRAM, mapeos de la zona.
-    
+    * **Gestión:** Dirección integral, presupuestos, cronogramas.
+    * **Comunicación:** Mensajes, branding, redes sociales, memoria.
+    * **Infraestructura:** Instalaciones, planos, señalética, equipo técnico.
+    * **Investigación:** História, mapeos, análisis de públicos.
     ### 📂 Subcategorías
     #### 🔹 GESTIÓN
-    * **Administración:** Cronogramas, necesidades, planificación.
-    * **Financiamiento:** Becas, presupuestos, patrocinios.
-    * **Vinculación:** Contacto, relaciones públicas, alianzas.
+    * **Administración:** Cronogramas, planificación.
+    * **Financiamiento:** Becas, presupuestos, donantes.
+    * **Vinculación:** Relaciones públicas, alianzas.
     #### 🔹 COMUNICACIÓN
-    * **Memoria/archivo:** Fotografías y videos del CEDRAM o PAP.
-    * **Diseño:** Identidad visual, folletos, pósters.
-    * **Difusión:** Redes sociales, campañas, impacto.
+    * **Memoria/archivo:** Fotos y videos (CEDRAM/PAP).
+    * **Diseño:** Identidad visual, folletos, posters.
+    * **Difusión:** Redes sociales, campañas.
     #### 🔹 INFRAESTRUCTURA
     * **Diseño arquitectónico:** Planos, renders, conceptos.
     * **Mantenimiento:** Señalética, remodelación.
