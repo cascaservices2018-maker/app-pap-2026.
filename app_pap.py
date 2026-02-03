@@ -129,6 +129,10 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
     st.altair_chart(chart, use_container_width=True)
 
+# --- INICIALIZACIÓN DE ESTADO PARA PERSISTENCIA ---
+if "borradores" not in st.session_state:
+    st.session_state.borradores = {}
+
 # --- INTERFAZ ---
 with st.sidebar:
     st.image(LOGO_URL, width=280) 
@@ -179,40 +183,113 @@ with tab1:
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2
+# PESTAÑA 2 (REDISEÑADA PARA PERSISTENCIA)
 # ==========================================
 with tab2:
-    st.subheader("⚡ Carga Rápida")
-    st.info("💡 Tip: Escribe subcategorías como quieras, el sistema las corrige.")
+    st.subheader("⚡ Carga Rápida y Edición")
+    st.info("💡 **Ahora con memoria:** Puedes cambiar de pestaña y tus cambios NO se borrarán hasta que guardes.")
+    
     df_p = load_data("Proyectos")
-    if df_p.empty: st.warning("Cargando...")
+    if df_p.empty: st.warning("Cargando proyectos...")
     elif "Nombre del Proyecto" in df_p.columns:
-        proy = st.selectbox("Selecciona Proyecto:", sorted(df_p["Nombre del Proyecto"].unique().tolist()))
-        info = df_p[df_p["Nombre del Proyecto"] == proy].iloc[0]
-        cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
-        st.caption(f"Categoría: {cat} | Estimado: {estim}")
+        proy_sel = st.selectbox("Selecciona el Proyecto:", sorted(df_p["Nombre del Proyecto"].unique().tolist()))
         
-        k = f"editor_{proy}"
-        if k not in st.session_state: st.session_state[k] = pd.DataFrame(index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"])
+        # Obtenemos info del proyecto
+        info_p = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
+        cat_auto = info_p.get("Categoría", "General")
+        estimado = int(info_p.get("Num_Entregables", 5))
         
-        edit = st.data_editor(st.session_state[k], num_rows="dynamic", key=f"w_{proy}", use_container_width=True,
-            column_config={"Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"), "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True), "Contenido": st.column_config.TextColumn("Contenido", width="large")})
+        st.caption(f"Categoría: **{cat_auto}** | Espacios iniciales: **{estimado}**")
 
-        if st.button("🚀 Guardar Entregables"):
-            validos = edit[edit["Nombre_Entregable"].notna() & (edit["Nombre_Entregable"]!="")].copy()
-            if validos.empty: st.error("Vacío")
+        # --- LÓGICA DE MEMORIA ---
+        # 1. Si NO tenemos un borrador en memoria para este proyecto, lo cargamos desde la Base de Datos
+        if proy_sel not in st.session_state.borradores:
+            df_e = load_data("Entregables")
+            # Filtramos si ya existen entregables para este proyecto
+            existentes = pd.DataFrame()
+            if not df_e.empty:
+                existentes = df_e[df_e["Proyecto_Padre"] == proy_sel]
+            
+            if not existentes.empty:
+                # Si existen, los cargamos para editar (solo columnas útiles)
+                cols_utiles = ["Entregable", "Contenido", "Subcategoría", "Plantillas"]
+                # Mapeamos nombres para que coincidan con el editor
+                datos_carga = existentes[cols_utiles].rename(columns={
+                    "Entregable": "Nombre_Entregable",
+                    "Subcategoría": "Subcategorías",
+                    "Plantillas": "Plantillas_Usadas"
+                })
+                st.session_state.borradores[proy_sel] = datos_carga
+            else:
+                # Si no existen, creamos filas vacías según el estimado
+                st.session_state.borradores[proy_sel] = pd.DataFrame(
+                    index=range(estimado), 
+                    columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]
+                )
+
+        # 2. Mostramos el Editor conectado a la memoria
+        st.write("👇 **Edita o agrega entregables:**")
+        edited_df = st.data_editor(
+            st.session_state.borradores[proy_sel], # Leemos de memoria
+            num_rows="dynamic",
+            key=f"editor_persistente_{proy_sel}",
+            use_container_width=True,
+            column_config={
+                "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", default="General", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
+                "Nombre_Entregable": st.column_config.TextColumn("Nombre Entregable", required=True),
+                "Contenido": st.column_config.TextColumn("Contenido", width="large"),
+                "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
+            }
+        )
+        
+        # 3. Guardamos cada cambio en tiempo real en la memoria (persistencia)
+        st.session_state.borradores[proy_sel] = edited_df
+
+        # 4. Botón de Guardado Final
+        if st.button("🚀 Guardar Cambios (Reemplazar)"):
+            datos_validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
+            if datos_validos.empty: 
+                st.error("La tabla está vacía o no tiene nombres.")
             else:
                 try:
-                    validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
-                    df_e = load_data("Entregables")
-                    nuevos = []
-                    hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    for _, r in validos.iterrows():
-                        nuevos.append({"Proyecto_Padre": proy, "Entregable": r["Nombre_Entregable"], "Contenido": r["Contenido"], "Categoría": cat, "Subcategoría": r["Subcategorías"], "Plantillas": r["Plantillas_Usadas"], "Fecha_Registro": hoy})
-                    save_data(pd.concat([df_e, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
-                    st.success("¡Guardado!")
-                    del st.session_state[k]; time.sleep(1); st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
+                    # Limpieza Ortográfica
+                    datos_validos["Subcategorías"] = datos_validos["Subcategorías"].apply(limpiar_textos)
+                    
+                    df_master = load_data("Entregables")
+                    
+                    # A) Borramos lo viejo de este proyecto para evitar duplicados
+                    if not df_master.empty:
+                        df_master = df_master[df_master["Proyecto_Padre"] != proy_sel]
+                    
+                    # B) Preparamos lo nuevo
+                    nuevas_filas = []
+                    fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    for index, row in datos_validos.iterrows():
+                        fila = {
+                            "Proyecto_Padre": proy_sel,
+                            "Entregable": row["Nombre_Entregable"],
+                            "Contenido": row["Contenido"],
+                            "Categoría": cat_auto,
+                            "Subcategoría": row["Subcategorías"],
+                            "Plantillas": row["Plantillas_Usadas"],
+                            "Fecha_Registro": fecha_hoy
+                        }
+                        nuevas_filas.append(fila)
+                    
+                    # C) Unimos y Guardamos
+                    df_final = pd.concat([df_master, pd.DataFrame(nuevas_filas)], ignore_index=True)
+                    save_data(df_final, "Entregables")
+                    
+                    st.success(f"¡Listo! Se actualizaron {len(nuevas_filas)} entregables para '{proy_sel}'.")
+                    # Opcional: Limpiar memoria para recargar desde DB la próxima vez
+                    # del st.session_state.borradores[proy_sel] 
+                    st.balloons()
+                    time.sleep(1)
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error al guardar: {e}")
 
 # ==========================================
 # PESTAÑA 3
@@ -225,9 +302,11 @@ with tab3:
     df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
+        # Autocorrección visual
         if "Categoría" in df_proy.columns: df_proy["Categoría"] = df_proy["Categoría"].apply(limpiar_textos)
         if not df_ent.empty and "Subcategoría" in df_ent.columns: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
 
+        # Filtros
         todas_cats = set(); todas_subs = set()
         for c in df_proy["Categoría"].dropna(): todas_cats.update([limpiar_textos(x) for x in str(c).split(',')])
         if not df_ent.empty: 
@@ -283,7 +362,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4 (GRÁFICAS CORREGIDAS)
+# PESTAÑA 4
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -327,14 +406,13 @@ with tab4:
                     ea = ev["Año_R"].value_counts().reset_index(); ea.columns=["Año","Total"]; ea["Tipo"]="Entregables"
                 else: ea = pd.DataFrame()
                 
-                # --- CORRECCIÓN FACET ---
                 df_chart = pd.concat([pa, ea])
                 base = alt.Chart(df_chart).encode(
-                    x=alt.X('Tipo:N', axis=None),
-                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']))
+                    x=alt.X('Tipo:N', title=None, axis=None),
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
                 )
-                bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
-                text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text='Total:Q')
+                bars = base.mark_bar(size=35, cornerRadius=5).encode(y=alt.Y('Total:Q', title='Total'))
+                text = base.mark_text(dy=-10, color='white').encode(y=alt.Y('Total:Q'), text=alt.Text('Total:Q'))
                 chart = alt.layer(bars, text).properties(width=100, height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
                 st.altair_chart(chart)
             else: st.info("Registra más años para ver la evolución.")
@@ -350,20 +428,17 @@ with tab4:
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Por Periodo")
-                data_p = df_f["Periodo"].value_counts().reset_index(); data_p.columns=["Periodo", "Total"]
-                graficar_oscuro(data_p, "Periodo", "Total", "Periodo", "Total", "#FFFFFF")
+                graficar_oscuro(df_f["Periodo"].value_counts().reset_index().rename(columns={"index":"Periodo","Periodo":"Cantidad"}), "Periodo", "count", "Periodo", "Total", "#FFFFFF")
             with c2:
                 st.subheader("Por Categoría")
                 sc = df_f["Categoría"].str.split(',').explode().str.strip(); sc=sc[sc!=""]; sc=sc[sc!="Nan"]
-                data_c = sc.value_counts().reset_index(); data_c.columns=["Categoría", "Total"]
-                graficar_oscuro(data_c, "Categoría", "Total", "Categoría", "Total", "#E0E0E0")
+                graficar_oscuro(sc.value_counts().reset_index().rename(columns={"index":"Categoría","Categoría":"Cantidad"}), "Categoría", "count", "Categoría", "Total", "#E0E0E0")
             
             st.markdown("---")
             st.subheader("📦 Subcategorías")
             if not ev_final.empty:
                 ss = ev_final["Subcategoría"].str.split(',').explode().str.strip(); ss=ss[ss!=""]; ss=ss[ss!="Nan"]
-                data_s = ss.value_counts().reset_index(); data_s.columns=["Subcategoría", "Total"]
-                graficar_oscuro(data_s, "Subcategoría", "Total", "Subcategoría", "Total", "#CCCCCC")
+                graficar_oscuro(ss.value_counts().reset_index().rename(columns={"index":"Subcategoría","Subcategoría":"Cantidad"}), "Subcategoría", "count", "Subcategoría", "Total", "#CCCCCC")
 
 # ==========================================
 # PESTAÑA 5
