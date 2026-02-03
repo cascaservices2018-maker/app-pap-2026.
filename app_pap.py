@@ -129,7 +129,12 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
     st.altair_chart(chart, use_container_width=True)
 
-# --- INICIALIZACIÓN DE MEMORIA ---
+# --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
+# 1. Para la Pestaña 1 (Reset del formulario)
+if "form_seed" not in st.session_state:
+    st.session_state.form_seed = 0
+
+# 2. Para la Pestaña 2 (Persistencia de la carga masiva)
 if "borradores" not in st.session_state:
     st.session_state.borradores = {}
 
@@ -146,7 +151,6 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-# DEFINICIÓN DE PESTAÑAS
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "1. Registrar PROYECTO", 
     "2. Carga Masiva ENTREGABLES", 
@@ -157,31 +161,34 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ==========================================
-# PESTAÑA 1 (CORREGIDA: NO BORRA SI HAY ERROR)
+# PESTAÑA 1: REGISTRO (CON RESET INTELIGENTE)
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
-    # CAMBIO: clear_on_submit=False evita que se borre automáticamente
+    
+    # clear_on_submit=False es vital para que NO se borre si hay error
     with st.form("form_proyecto", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
-        # Asignamos KEYS para poder limpiarlos manualmente solo cuando queramos
-        anio = c1.number_input("Año", 2019, 2030, datetime.now().year, key="k_anio")
-        periodo = c2.selectbox("Periodo", ["Primavera", "Verano", "Otoño"], key="k_periodo")
-        cats = c3.multiselect("Categoría(s)", CATEGORIAS_LISTA, key="k_cats")
+        # Usamos form_seed en el key. Si form_seed cambia, el campo se reinicia.
+        semilla = st.session_state.form_seed
         
-        nombre = st.text_input("Nombre del Proyecto", key="k_nombre")
-        desc = st.text_area("Descripción", key="k_desc")
+        anio = c1.number_input("Año", 2019, 2030, datetime.now().year, key=f"anio_{semilla}")
+        periodo = c2.selectbox("Periodo", ["Primavera", "Verano", "Otoño"], key=f"periodo_{semilla}")
+        cats = c3.multiselect("Categoría(s)", CATEGORIAS_LISTA, key=f"cats_{semilla}")
+        
+        nombre = st.text_input("Nombre del Proyecto", key=f"nombre_{semilla}")
+        desc = st.text_area("Descripción", key=f"desc_{semilla}")
         
         ce, cc = st.columns(2)
-        num_ent = ce.number_input("Estimado Entregables", 1, step=1, key="k_num")
-        comen = cc.text_area("Comentarios", key="k_comen")
+        num_ent = ce.number_input("Estimado Entregables", 1, step=1, key=f"num_{semilla}")
+        comen = cc.text_area("Comentarios", key=f"comen_{semilla}")
 
         if st.form_submit_button("💾 Guardar Proyecto"):
             # Validación
             if not nombre: 
-                st.error("⚠️ El nombre es obligatorio. (Tus datos siguen aquí)")
+                st.error("⚠️ El nombre es obligatorio. (Tus datos siguen aquí, complétalos)")
             elif not cats: 
-                st.error("⚠️ Debes elegir al menos una categoría. (Tus datos siguen aquí)")
+                st.error("⚠️ Debes elegir al menos una categoría. (Tus datos siguen aquí, complétalos)")
             else:
                 df = load_data("Proyectos")
                 if not df.empty and "Nombre del Proyecto" in df.columns and nombre in df["Nombre del Proyecto"].values:
@@ -197,22 +204,19 @@ with tab1:
                     save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
                     st.success("¡Proyecto guardado con éxito!")
                     
-                    # --- LIMPIEZA MANUAL SOLO SI FUE EXITOSO ---
-                    # Reiniciamos los campos del session_state para dejarlos en blanco
-                    st.session_state.k_nombre = ""
-                    st.session_state.k_desc = ""
-                    st.session_state.k_comen = ""
-                    st.session_state.k_cats = []
-                    # Forzamos recarga para ver los campos vacíos
+                    # TRUCO DE LIMPIEZA:
+                    # Incrementamos la 'semilla'. Esto cambia los IDs de los inputs
+                    # y Streamlit los renderiza como nuevos (vacíos) en la próxima recarga.
+                    st.session_state.form_seed += 1
                     time.sleep(1)
                     st.rerun()
 
 # ==========================================
-# PESTAÑA 2
+# PESTAÑA 2: CARGA MASIVA (PERSISTENTE)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Ahora con memoria:** Puedes cambiar de pestaña y tus cambios NO se borrarán hasta que guardes.")
+    st.info("💡 **Con Memoria:** Tus cambios se guardan si cambias de pestaña.")
     
     df_p = load_data("Proyectos")
     if df_p.empty: st.warning("Cargando proyectos...")
@@ -238,8 +242,10 @@ with tab2:
                     "Subcategoría": "Subcategorías",
                     "Plantillas": "Plantillas_Usadas"
                 })
+                # IMPORTANTE: .fillna("") y .astype(str) evitan el error de API
                 st.session_state.borradores[proy_sel] = datos_carga.fillna("").astype(str)
             else:
+                # IMPORTANTE: Inicializar con "" en lugar de NaN
                 st.session_state.borradores[proy_sel] = pd.DataFrame(
                     "", 
                     index=range(estimado), 
@@ -411,7 +417,7 @@ with tab4:
                 df_chart = pd.concat([pa, ea])
                 base = alt.Chart(df_chart).encode(
                     x=alt.X('Tipo:N', axis=None),
-                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']))
                 )
                 bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
                 text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text='Total:Q')
