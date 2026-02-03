@@ -33,29 +33,36 @@ estilos_css = f"""
 st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 DICCIONARIO INTELIGENTE
+# 📖 DICCIONARIO INTELIGENTE (JERARQUIZADO)
 # ==========================================
+# IMPORTANTE: El orden importa. Ponemos primero las frases compuestas ("Diseño arquitectónico")
+# para que el sistema las encuentre antes que las simples ("Diseño").
 DICCIONARIO_CORRECTO = {
-    # GESTIÓN
-    "gestion": "Gestión", "gestión": "Gestión",
+    # --- INFRAESTRUCTURA (Prioridad Alta) ---
+    "diseno arquitectonico": "Diseño arquitectónico", # <--- ESTA REGLA EVITA LA CONFUSIÓN
+    "diseño arquitectonico": "Diseño arquitectónico",
+    "arquitectonico": "Diseño arquitectónico", 
+    "arquitectura": "Diseño arquitectónico",
+    "planos": "Diseño arquitectónico",
+    "mantenimiento": "Mantenimiento",
+    "teatrales": "Productos teatrales",
+    "productos teatrales": "Productos teatrales",
+    
+    # --- GESTIÓN ---
     "administracion": "Administración", "admin": "Administración",
     "financiamiento": "Financiamiento", "finanza": "Financiamiento",
     "vinculacion": "Vinculación", "vinc": "Vinculación",
+    "gestion": "Gestión", "gestión": "Gestión",
     
-    # COMUNICACIÓN
-    "comunicacion": "Comunicación", "comunicasion": "Comunicación", "comunica": "Comunicación",
-    "diseno": "Diseño", "diseño": "Diseño",
+    # --- COMUNICACIÓN (Aquí está "Diseño" solo) ---
+    "comunicacion": "Comunicación", "comunica": "Comunicación",
+    "diseno": "Diseño", "diseño": "Diseño", # <--- Solo se activará si NO es arquitectónico
+    "grafico": "Diseño",
     "difusion": "Difusión", "difucion": "Difusión",
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo",
     
-    # INFRAESTRUCTURA
-    "infraestructura": "Infraestructura", "infra": "Infraestructura",
-    "arquitectonico": "Diseño arquitectónico", "arquitectura": "Diseño arquitectónico",
-    "mantenimiento": "Mantenimiento",
-    "teatrales": "Productos teatrales", "productos": "Productos teatrales", "producto": "Productos teatrales",
-    
-    # INVESTIGACIÓN (Categoría Principal)
-    "investigacion": "Investigación", "investigasion": "Investigación"
+    # --- INVESTIGACIÓN ---
+    "investigacion": "Investigación"
 }
 
 def normalizar_comparacion(texto):
@@ -70,11 +77,12 @@ def limpiar_textos(texto_sucio):
     for p in palabras:
         p_norm = normalizar_comparacion(p)
         encontrado = False
+        # El diccionario ya está ordenado arriba para priorizar "arquitectónico" antes que "diseño"
         for error_clave, correccion_perfecta in DICCIONARIO_CORRECTO.items():
             if error_clave in p_norm: 
                 palabras_corregidas.append(correccion_perfecta)
                 encontrado = True
-                break
+                break # Al encontrar "diseno arquitectonico" se detiene y ya no busca "diseno"
         if not encontrado:
             palabras_corregidas.append(p.strip()) 
     return ", ".join(sorted(list(dict.fromkeys(palabras_corregidas))))
@@ -83,8 +91,6 @@ def limpiar_textos(texto_sucio):
 # 🔗 CONFIGURACIÓN SISTEMA
 # ==========================================
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
-
-# AQUÍ ESTÁ INVESTIGACIÓN COMO CATEGORÍA PRINCIPAL
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
 
 SUBCATEGORIAS_SUGERIDAS = [
@@ -179,7 +185,7 @@ with tab1:
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Memoria Estable:** Cambios guardados solo al presionar el botón.")
+    st.info("💡 **Tip:** Copia y pega desde Excel. Las subcategorías se corregirán al guardar.")
     df_p = load_data("Proyectos")
     if df_p.empty: st.warning("Cargando...")
     elif "Nombre del Proyecto" in df_p.columns:
@@ -201,7 +207,11 @@ with tab2:
             st.session_state.proyecto_activo_masivo = proy_sel
 
         edited_df = st.data_editor(st.session_state.df_buffer_masivo, num_rows="dynamic", key="editor_masivo", use_container_width=True,
-            column_config={"Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"), "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True), "Contenido": st.column_config.TextColumn("Contenido", width="large")})
+            column_config={
+                "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
+                "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
+                "Contenido": st.column_config.TextColumn("Contenido", width="large")
+            })
         
         if not edited_df.equals(st.session_state.df_buffer_masivo): st.session_state.df_buffer_masivo = edited_df
 
@@ -210,6 +220,7 @@ with tab2:
             if validos.empty: st.error("Vacío.")
             else:
                 try:
+                    # Limpieza inteligente que respeta "Diseño arquitectónico"
                     validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
                     df_m = load_data("Entregables")
                     if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
@@ -377,65 +388,4 @@ with tab4:
             st.session_state.stats_download = {
                 "Resumen_Anual": df_chart if 'df_chart' in locals() else pd.DataFrame(),
                 "Por_Periodo": data_p if 'data_p' in locals() else pd.DataFrame(),
-                "Por_Categoría": data_c if 'data_c' in locals() else pd.DataFrame(),
-                "Por_Subcategoría": data_s if 'data_s' in locals() else pd.DataFrame()
-            }
-
-# ==========================================
-# PESTAÑA 5: DESCARGAS
-# ==========================================
-with tab5:
-    st.header("📥 Centro de Descargas")
-    
-    st.subheader("1. Base de Datos Completa")
-    if st.button("Generar Respaldo Completo (Excel)"):
-        b = io.BytesIO()
-        with pd.ExcelWriter(b, engine='openpyxl') as w: 
-            load_data("Proyectos").to_excel(w, 'Proyectos', index=False)
-            load_data("Entregables").to_excel(w, 'Entregables', index=False)
-        st.download_button("⬇️ Descargar BD.xlsx", b.getvalue(), "Respaldo_Completo.xlsx")
-
-    st.markdown("---")
-    st.subheader("2. Reporte de Gráficas (Datos)")
-    if "stats_download" in st.session_state and not st.session_state.stats_download.get("Resumen_Anual", pd.DataFrame()).empty:
-        if st.button("Generar Reporte Estadístico"):
-            b_stats = io.BytesIO()
-            with pd.ExcelWriter(b_stats, engine='openpyxl') as w:
-                st.session_state.stats_download["Resumen_Anual"].to_excel(w, "Resumen Anual", index=False)
-                st.session_state.stats_download["Por_Periodo"].to_excel(w, "Por Periodo", index=False)
-                st.session_state.stats_download["Por_Categoría"].to_excel(w, "Por Categoría", index=False)
-                st.session_state.stats_download["Por_Subcategoría"].to_excel(w, "Por Subcategoría", index=False)
-            st.download_button("⬇️ Descargar Reporte_Graficas.xlsx", b_stats.getvalue(), "Reporte_Graficas.xlsx")
-    else:
-        st.warning("⚠️ Primero ve a la pestaña 'Gráficas' para generar los datos.")
-
-# ==========================================
-# PESTAÑA 6: GLOSARIO
-# ==========================================
-with tab6:
-    st.header("📖 Glosario de Términos")
-    st.markdown("""
-    ### 🗂️ Categorías
-    * **Gestión:** Archivos que tengan que ver con la Dirección integral del proyecto.
-    * **Comunicación:** Diseño y ejecución de mensajes, canales para alinear a internos/externos.
-    * **Infraestructura:** Instalaciones fijas y móviles, planos arquitectónicos, señalética.
-    * **Investigación:** História de la finca, del CEDRAM, mapeos de la zona.
-    
-    ### 📂 Subcategorías
-    
-    #### 🔹 GESTIÓN
-    * **Administración:** Cronogramas, necesidades, planificación.
-    * **Financiamiento:** Becas, presupuestos, donantes.
-    * **Vinculación:** Contacto, relaciones públicas, alianzas.
-    
-    #### 🔹 COMUNICACIÓN
-    * **Memoria/archivo CEDRAM:** Archivos de memoria del equipo del CEDRAM.
-    * **Memoria/archivo PAP:** Archivos de memoria del equipo del PAP.
-    * **Diseño:** Identidad visual, folletos, pósters.
-    * **Difusión:** Redes sociales, campañas, impacto.
-    
-    #### 🔹 INFRAESTRUCTURA
-    * **Diseño arquitectónico:** Planos, renders, conceptos.
-    * **Mantenimiento:** Señalética, remodelación.
-    * **Productos teatrales:** Vestuario, Kamishibai.
-    """)
+                "Por_Categoría": data_c if 'data
