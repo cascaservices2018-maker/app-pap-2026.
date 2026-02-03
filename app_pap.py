@@ -80,7 +80,7 @@ with tab1:
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (SOLUCIÓN BORRADO)
+# PESTAÑA 2: CARGA MASIVA (ESTABLE)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida de Entregables")
@@ -102,11 +102,9 @@ with tab2:
             
             st.caption(f"Categoría: **{cat_auto}** | Espacios generados: **{num_estimado}**")
 
-            # --- CORRECCIÓN CLAVE: USO DE SESSION STATE ---
-            # Creamos una llave única para este proyecto
+            # --- USO DE SESSION STATE (MEMORIA) ---
             session_key = f"data_editor_{proyecto_sel}"
 
-            # Solo creamos la tabla vacía SI NO EXISTE ya en la memoria
             if session_key not in st.session_state:
                 st.session_state[session_key] = pd.DataFrame(
                     index=range(num_estimado), 
@@ -115,13 +113,12 @@ with tab2:
 
             st.write("👇 **Llena la tabla:**")
             
-            # Le pasamos la tabla guardada en memoria, no una nueva
+            # Volvemos a use_container_width=True (Aunque salga rojo, es lo seguro)
             edited_df = st.data_editor(
                 st.session_state[session_key],
                 num_rows="dynamic",
                 key=f"editor_widget_{proyecto_sel}",
-                # Aquí arreglamos el error rojo width='stretch'
-                width=None, 
+                use_container_width=True, 
                 column_config={
                     "Subcategorías": st.column_config.TextColumn(
                         "Subcategoría(s)",
@@ -135,7 +132,6 @@ with tab2:
             )
 
             if st.button("🚀 Guardar Todos los Entregables"):
-                # Filtramos vacíos
                 datos_validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
                 
                 if datos_validos.empty:
@@ -162,10 +158,9 @@ with tab2:
                         save_data(df_final, "Entregables")
                         st.success(f"¡Éxito! Se guardaron {len(nuevas_filas)} entregables.")
                         
-                        # Limpiamos la memoria para que la tabla se vacíe tras guardar
+                        # Limpiar memoria tras guardar
                         del st.session_state[session_key]
                         st.balloons()
-                        # Forzamos recarga para ver la tabla limpia
                         import time
                         time.sleep(1)
                         st.rerun()
@@ -194,14 +189,13 @@ with tab3:
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
 
         st.markdown("### Proyectos")
-        # Corrección del error rojo
-        st.dataframe(df_view, width=None) 
+        st.dataframe(df_view, use_container_width=True) 
         
         st.markdown("### Entregables Vinculados")
         if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
             visible_projects = df_view["Nombre del Proyecto"].unique()
             df_ent_view = df_ent[df_ent["Proyecto_Padre"].isin(visible_projects)]
-            st.dataframe(df_ent_view, width=None)
+            st.dataframe(df_ent_view, use_container_width=True)
         else:
             st.info("No hay entregables aún.")
 
