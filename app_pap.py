@@ -9,16 +9,11 @@ st.set_page_config(page_title="Gestión PAP - Nube", layout="wide", page_icon="�
 
 # --- LISTAS FIJAS ---
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
-SUBCATEGORIAS_FIJAS = [
-    "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", 
-    "Memoria/archivo PAP", "Diseño", "Difusión", 
-    "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"
-]
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNCIÓN LOAD_DATA BLINDADA ---
+# --- FUNCIONES ---
 def load_data(sheet_name):
     try:
         df = conn.read(worksheet=sheet_name, ttl=0)
@@ -71,8 +66,7 @@ with tab1:
                 st.error("El nombre es obligatorio")
             else:
                 df_proy = load_data("Proyectos")
-                
-                # Validación simple de duplicados
+                # Validación de duplicados
                 if not df_proy.empty and "Nombre del Proyecto" in df_proy.columns and nombre_proyecto in df_proy["Nombre del Proyecto"].values:
                      st.warning("⚠️ Ya existe un proyecto con ese nombre.")
                 else:
@@ -82,17 +76,16 @@ with tab1:
                         "Categoría": categoria_proy, "Comentarios": comentarios,
                         "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
-                    
                     df_updated = pd.concat([df_proy, pd.DataFrame([nuevo])], ignore_index=True)
                     save_data(df_updated, "Proyectos")
                     st.success("¡Proyecto guardado!")
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (CORREGIDA)
+# PESTAÑA 2: CARGA MASIVA
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida de Entregables")
-    st.info("💡 **Tip:** Puedes escribir varias subcategorías separadas por coma. Ej: _Diseño, Difusión_")
+    st.info("💡 **Tip:** Escribe subcategorías separadas por coma. Ej: _Diseño, Difusión_")
     
     df_p = load_data("Proyectos")
     
@@ -118,11 +111,10 @@ with tab2:
             
             st.write("👇 **Llena la tabla:**")
             
-            # USA UNA "KEY" DINÁMICA para evitar que se borre al parpadear
             edited_df = st.data_editor(
                 plantilla_data,
                 num_rows="dynamic",
-                use_container_width=True, # Mantenemos esto o lo quitamos si da error, pero el error venía de st.dataframe
+                use_container_width=True,
                 column_config={
                     "Subcategorías": st.column_config.TextColumn(
                         "Subcategoría(s)",
@@ -133,18 +125,17 @@ with tab2:
                     "Contenido": st.column_config.TextColumn("Contenido/Descripción", width="large"),
                     "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
                 },
-                key=f"editor_{proyecto_sel}" # ¡ESTO ES LO IMPORTANTE PARA QUE NO SE BORRE!
+                key=f"editor_{proyecto_sel}"
             )
 
             if st.button("🚀 Guardar Todos los Entregables"):
                 datos_validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
                 
                 if datos_validos.empty:
-                    st.error("La tabla está vacía o no pusiste nombres a los entregables.")
+                    st.error("La tabla está vacía.")
                 else:
                     try:
                         df_ent_cloud = load_data("Entregables")
-                        
                         nuevas_filas = []
                         fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
@@ -164,7 +155,6 @@ with tab2:
                         save_data(df_final, "Entregables")
                         st.success(f"¡Éxito! Se guardaron {len(nuevas_filas)} entregables.")
                         st.balloons()
-                        # Nota: Al guardar exitosamente, la tabla se limpiará en la siguiente recarga. Eso es normal.
                     except Exception as e:
                         st.error(f"Error al guardar: {e}")
 
@@ -189,12 +179,113 @@ with tab3:
         if f_period: df_view = df_view[df_view["Periodo"].isin(f_period)]
 
         st.markdown("### Proyectos")
-        # CORRECCIÓN DE ERROR ROJO: Usamos width='stretch' en lugar de use_container_width
-        st.dataframe(df_view, width=None) 
+        st.dataframe(df_view, use_container_width=True)
         
         st.markdown("### Entregables Vinculados")
         if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
             visible_projects = df_view["Nombre del Proyecto"].unique()
             df_ent_view = df_ent[df_ent["Proyecto_Padre"].isin(visible_projects)]
-            st.dataframe(df_ent_view, width=None)
+            st.dataframe(df_ent_view, use_container_width=True)
         else:
+            st.info("No hay entregables aún.")
+
+        st.markdown("---")
+        with st.expander("🗑️ Zona de Borrado"):
+            to_del = st.selectbox("Proyecto a eliminar:", df_proy["Nombre del Proyecto"].unique())
+            if st.button("Eliminar Definitivamente"):
+                df_proy_new = df_proy[df_proy["Nombre del Proyecto"] != to_del]
+                if not df_ent.empty and "Proyecto_Padre" in df_ent.columns:
+                    df_ent_new = df_ent[df_ent["Proyecto_Padre"] != to_del]
+                    save_data(df_ent_new, "Entregables")
+                save_data(df_proy_new, "Proyectos")
+                st.success("Eliminado.")
+                st.rerun()
+    else:
+        st.info("No se encontraron datos de proyectos.")
+
+# ==========================================
+# PESTAÑA 4: GRÁFICAS
+# ==========================================
+with tab4:
+    st.header("📊 Estadísticas en Vivo")
+    try:
+        df_p_s = load_data("Proyectos")
+        df_e_s = load_data("Entregables")
+    except:
+        df_p_s = pd.DataFrame()
+        df_e_s = pd.DataFrame()
+
+    if not df_p_s.empty and "Año" in df_p_s.columns:
+        st.markdown("#### Filtros")
+        col_g1, col_g2 = st.columns(2)
+        
+        with col_g1:
+             years_g = st.multiselect("Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()))
+        
+        with col_g2:
+             all_periods = ["Primavera", "Verano", "Otoño"]
+             periods_g = st.multiselect("Periodo", all_periods, default=all_periods)
+        
+        df_filtered = df_p_s[
+            df_p_s["Año"].isin(years_g) & 
+            df_p_s["Periodo"].isin(periods_g)
+        ]
+        
+        if df_filtered.empty:
+            st.warning("No hay datos.")
+        else:
+            st.markdown("---")
+            col_kpi1, col_kpi2 = st.columns(2)
+            col_kpi1.metric("Proyectos", len(df_filtered))
+            
+            proyectos_visibles = df_filtered["Nombre del Proyecto"].unique()
+            if not df_e_s.empty and "Proyecto_Padre" in df_e_s.columns:
+                df_e_filtered = df_e_s[df_e_s["Proyecto_Padre"].isin(proyectos_visibles)]
+                col_kpi2.metric("Entregables", len(df_e_filtered))
+            else:
+                df_e_filtered = pd.DataFrame()
+                col_kpi2.metric("Entregables", 0)
+
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Por Periodo")
+                st.bar_chart(df_filtered["Periodo"].value_counts())
+            with col2:
+                st.subheader("Por Categoría")
+                st.bar_chart(df_filtered["Categoría"].value_counts())
+                
+            st.markdown("---")
+            st.subheader("📦 Subcategorías (Desglosadas)")
+            if not df_e_filtered.empty and "Subcategoría" in df_e_filtered.columns:
+                 # Truco para separar comas
+                 series_sub = df_e_filtered["Subcategoría"].astype(str).str.split(',').explode().str.strip()
+                 st.bar_chart(series_sub.value_counts())
+    else:
+        st.info("No hay datos suficientes para graficar.")
+
+# ==========================================
+# PESTAÑA 5: DESCARGAR EXCEL
+# ==========================================
+with tab5:
+    st.header("📥 Exportar Base de Datos")
+    
+    if st.button("🔄 Generar Archivo Excel"):
+        with st.spinner("Descargando..."):
+            try:
+                df_proy_down = load_data("Proyectos")
+                df_ent_down = load_data("Entregables")
+                
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_proy_down.to_excel(writer, sheet_name='Proyectos', index=False)
+                    df_ent_down.to_excel(writer, sheet_name='Entregables', index=False)
+                
+                st.download_button(
+                    label="⬇️ Descargar Excel Listo (.xlsx)",
+                    data=buffer.getvalue(),
+                    file_name=f"Reporte_PAP_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as e:
+                st.error(f"Error: {e}")
