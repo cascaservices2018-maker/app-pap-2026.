@@ -179,7 +179,7 @@ with tab1:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (LIMPIO)
+# PESTAÑA 2: CARGA MASIVA (LIMPIA - SIN PLANTILLAS)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -195,8 +195,8 @@ with tab2:
         if st.session_state.last_selected_project != proy_sel:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
+            # SELECCIÓN ESTRICTA DE COLUMNAS PARA EVITAR PLANTILLAS
             if not exist.empty:
-                # SOLO COLUMNAS BÁSICAS
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
                 temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías"])
@@ -210,7 +210,6 @@ with tab2:
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
                     "Contenido": st.column_config.TextColumn("Contenido", width="large")
-                    # SIN PLANTILLAS NI ESTATUS
                 }
             )
             if st.form_submit_button("🚀 Guardar Cambios"):
@@ -234,7 +233,7 @@ with tab2:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 3: EDICIÓN (LIMPIO)
+# PESTAÑA 3: EDICIÓN (LIMPIA - SIN ESTATUS/RESPONSABLE/PLANTILLAS)
 # ==========================================
 with tab3:
     st.header("📝 Edición")
@@ -287,25 +286,21 @@ with tab3:
 
         with st.expander("Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
-                # FILTRO FINAL: Solo columnas básicas. Sin Estatus, Responsable ni Plantillas.
-                cols_basicas = ["Entregable", "Contenido", "Subcategoría", "Fecha_Registro"]
-                # Aseguramos que existan en el DF antes de seleccionar
-                cols_a_mostrar = [c for c in cols_basicas if c in st.session_state.p3_buffer_ent.columns]
+                # FILTRO PARA MOSTRAR SOLO COLUMNAS ESENCIALES
+                # Quitamos: Estatus, Responsable, Observaciones, Plantillas
+                cols_limpias = ["Entregable", "Contenido", "Subcategoría", "Fecha_Registro"]
+                # Asegurar que existan
+                cols_final = [c for c in cols_limpias if c in st.session_state.p3_buffer_ent.columns]
                 
-                ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_a_mostrar], use_container_width=True, key="ee3", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
+                ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_final], use_container_width=True, key="ee3", 
+                    column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
                 
                 if st.button("Actualizar Entregables"):
-                    m = load_data("Entregables")
-                    # Actualizamos solo las columnas visibles
-                    m.update(ed_e) 
-                    save_data(m, "Entregables")
-                    # Actualizamos buffer visual
-                    st.session_state.p3_buffer_ent.update(ed_e)
-                    st.success("OK")
+                    m = load_data("Entregables"); m.update(ed_e); save_data(m, "Entregables"); st.success("OK")
             else: st.info("Sin datos.")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (SIN GRAFICA DE ESTATUS)
+# PESTAÑA 4: GRÁFICAS (CON CONTADORES Y ETIQUETAS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
