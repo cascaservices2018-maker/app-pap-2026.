@@ -55,7 +55,7 @@ DICCIONARIO_CORRECTO = {
     "comunicacion": "Comunicación", "comunica": "Comunicación",
     "diseno": "Diseño", "diseño": "Diseño",
     "grafico": "Diseño",
-    "difusion": "Difusión", "difucion": "Difusión", "dufusion": "Difusión", # <-- AGREGADO
+    "difusion": "Difusión", "difucion": "Difusión", "dufusion": "Difusión",
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo",
     # INVESTIGACIÓN
     "investigacion": "Investigación", "investigasion": "Investigación"
@@ -114,14 +114,29 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FF4B4B"):
-    # Estilo premium: Barras redondeadas, sin bordes, ejes limpios
-    chart = alt.Chart(df).mark_bar(color=color_barra, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
-        x=alt.X(x_col, title=titulo_x, sort='-y', axis=alt.Axis(labelColor='white', titleColor='white', labelAngle=-45)),
-        y=alt.Y(y_col, title=titulo_y, axis=alt.Axis(labelColor='white', titleColor='white', gridColor='#444444')),
-        tooltip=[x_col, y_col]
-    ).properties(height=320).configure_view(stroke='transparent')
-    st.altair_chart(chart, theme="streamlit", use_container_width=True)
+# --- FUNCIÓN DE GRÁFICAS DINÁMICAS ---
+def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
+    if df.empty:
+        st.caption("Sin datos para graficar.")
+        return
+
+    if tipo_grafica == "Barras":
+        chart = alt.Chart(df).mark_bar(color=color_base, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
+            x=alt.X(x_col, title=None, sort='-y', axis=alt.Axis(labelColor='white', labelAngle=-45)),
+            y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444')),
+            tooltip=[x_col, y_col]
+        )
+    else:
+        # Configuración para Pastel y Donut
+        radio_interno = 60 if tipo_grafica == "Donut" else 0
+        chart = alt.Chart(df).mark_arc(innerRadius=radio_interno, outerRadius=120, stroke="#262730", strokeWidth=2).encode(
+            theta=alt.Theta(field=y_col, type="quantitative"),
+            color=alt.Color(field=x_col, type="nominal", legend=alt.Legend(title=titulo, labelColor='white', titleColor='white')),
+            order=alt.Order(field=y_col, sort="descending"),
+            tooltip=[x_col, y_col]
+        )
+    
+    st.altair_chart(chart.properties(height=350).configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
@@ -129,8 +144,7 @@ if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_cr
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = None
 if "last_selected_project" not in st.session_state: st.session_state.last_selected_project = None
 if "stats_download" not in st.session_state: st.session_state.stats_download = {}
-
-# VARIABLES DE ESTADO PARA PESTAÑA 3
+# Estado para Pestaña 3
 if "p3_buffer_proy" not in st.session_state: st.session_state.p3_buffer_proy = None
 if "p3_buffer_ent" not in st.session_state: st.session_state.p3_buffer_ent = None
 if "p3_filter_hash" not in st.session_state: st.session_state.p3_filter_hash = ""
@@ -187,18 +201,16 @@ with tab1:
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Modo Búnker:** La tabla NO se actualizará ni borrará nada hasta que presiones 'Guardar Cambios'.")
+    st.info("💡 **Modo Búnker:** La tabla NO se actualizará hasta que presiones 'Guardar Cambios'.")
     
     df_p = load_data("Proyectos")
-    if df_p.empty: st.warning("Cargando...")
-    elif "Nombre del Proyecto" in df_p.columns:
-        
+    if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         idx_defecto = 0
         if st.session_state.proy_recien_creado in lista_proy:
             idx_defecto = lista_proy.index(st.session_state.proy_recien_creado)
             
-        proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, index=idx_defecto, key="selector_proyectos_masivo")
+        proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, index=idx_defecto, key="selector_masivo")
         
         info = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
         cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
@@ -206,17 +218,11 @@ with tab2:
 
         if st.session_state.last_selected_project != proy_sel:
             df_e = load_data("Entregables")
-            exist = pd.DataFrame()
-            if not df_e.empty:
-                exist = df_e[df_e["Proyecto_Padre"] == proy_sel]
-            
+            exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             if not exist.empty:
-                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(
-                    columns={"Entregable": "Nombre_Entregable", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"}
-                )
+                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"})
             else:
-                temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"])
-            
+                temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías", "Plantillas_Usadas"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -224,23 +230,19 @@ with tab2:
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo, 
                 num_rows="dynamic", 
-                width="stretch",
+                use_container_width=True, # Compatibilidad
                 column_config={
-                    "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
-                    "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
-                    "Contenido": st.column_config.TextColumn("Contenido", width="large"),
-                    "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
+                    "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
+                    "Nombre": st.column_config.TextColumn("Nombre", required=True),
+                    "Contenido": st.column_config.TextColumn("Contenido", width="large")
                 }
             )
-            submit_btn = st.form_submit_button("🚀 Guardar Cambios (Definitivo)")
+            submit_btn = st.form_submit_button("🚀 Guardar Cambios")
 
         if submit_btn:
-            df_final_process = edited_df.astype(str).replace({"nan": "", "None": "", "NaN": ""})
-            validos = df_final_process[
-                (df_final_process["Nombre_Entregable"].str.strip() != "")
-            ].copy()
-            
-            if validos.empty: st.error("La tabla está vacía o no tiene nombres.")
+            df_final = edited_df.astype(str).replace({"nan": "", "None": "", "NaN": ""})
+            validos = df_final[df_final["Nombre"].str.strip() != ""].copy()
+            if validos.empty: st.error("Tabla vacía.")
             else:
                 try:
                     validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
@@ -252,109 +254,94 @@ with tab2:
                     for _, r in validos.iterrows():
                         nuevos.append({
                             "Proyecto_Padre": proy_sel, 
-                            "Entregable": r["Nombre_Entregable"], 
+                            "Entregable": r["Nombre"], 
                             "Contenido": r["Contenido"], 
                             "Categoría": cat, 
                             "Subcategoría": r["Subcategorías"], 
                             "Plantillas": r["Plantillas_Usadas"], 
                             "Fecha_Registro": hoy
                         })
-                    
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
-                    st.session_state.df_buffer_masivo = df_final_process
-                    st.success("¡Guardado exitoso!")
+                    st.session_state.df_buffer_masivo = df_final
+                    st.success("¡Guardado!")
                     time.sleep(1); st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (FILTROS EN CASCADA TOTAL)
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (CASCADA)
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
-    st.info("💡 **Filtros Inteligentes:** Al seleccionar un año o categoría, el resto de opciones se ajusta automáticamente.")
+    st.info("💡 **Filtros en Cascada:** Selecciona de izquierda a derecha.")
     
-    df_proy = load_data("Proyectos"); df_ent = load_data("Entregables")
+    df_p3 = load_data("Proyectos"); df_e3 = load_data("Entregables")
+    
+    if not df_p3.empty:
+        # Pre-limpieza
+        if "Categoría" in df_p3.columns: df_p3["Categoría"] = df_p3["Categoría"].apply(limpiar_textos)
+        if not df_e3.empty: df_e3["Subcategoría"] = df_e3["Subcategoría"].apply(limpiar_textos)
 
-    if not df_proy.empty and "Año" in df_proy.columns:
-        # Preprocesamiento de texto
-        if "Categoría" in df_proy.columns: df_proy["Categoría"] = df_proy["Categoría"].apply(limpiar_textos)
-        if not df_ent.empty: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
-
-        # --- LÓGICA DE CASCADA (EMBUDO DE DATOS) ---
-        # Empezamos con todos los datos
-        df_filtrado_dinamico = df_proy.copy()
-
+        # CASCADA LÓGICA
+        df_embudo = df_p3.copy()
+        
         c0, c1, c2, c3, c4 = st.columns(5)
         
-        # 1. AÑO (Nivel 1)
+        # 1. Año
         with c1:
-            opts_ano = sorted(df_proy["Año"].unique())
-            f_ano = st.multiselect("Año:", opts_ano, key="f_p3_ano")
-            if f_ano: df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Año"].isin(f_ano)]
-
-        # 2. PERIODO (Nivel 2 - Depende de Año)
+            f_ano = st.multiselect("Año:", sorted(df_p3["Año"].unique()), key="f3_ano")
+            if f_ano: df_embudo = df_embudo[df_embudo["Año"].isin(f_ano)]
+            
+        # 2. Periodo (Depende de Año)
         with c2:
-            opts_per = sorted(df_filtrado_dinamico["Periodo"].unique()) # Solo periodos disponibles
-            f_per = st.multiselect("Periodo:", opts_per, key="f_p3_per")
-            if f_per: df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Periodo"].astype(str).str.strip().isin(f_per)]
-
-        # 3. CATEGORÍA (Nivel 3 - Depende de Año y Periodo)
+            f_per = st.multiselect("Periodo:", sorted(df_embudo["Periodo"].unique()), key="f3_per")
+            if f_per: df_embudo = df_embudo[df_embudo["Periodo"].isin(f_per)]
+            
+        # 3. Categoría (Depende de Año + Periodo)
         with c3:
-            # Extraemos categorías únicas del DF ya filtrado
-            cats_disponibles = set()
-            for c in df_filtrado_dinamico["Categoría"].dropna(): 
-                cats_disponibles.update([limpiar_textos(x) for x in str(c).split(',')])
-            f_cat = st.multiselect("Categoría:", sorted(list(cats_disponibles)), key="f_p3_cat")
-            if f_cat: 
-                df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Categoría"].apply(lambda x: any(limpiar_textos(c) in f_cat for c in str(x).split(',')))]
-
-        # 4. SUBCATEGORÍA (Nivel 4 - El más complejo)
+            cats_disp = set()
+            for c in df_embudo["Categoría"].dropna(): cats_disp.update([limpiar_textos(x) for x in str(c).split(',')])
+            f_cat = st.multiselect("Categoría:", sorted(list(cats_disp)), key="f3_cat")
+            if f_cat: df_embudo = df_embudo[df_embudo["Categoría"].apply(lambda x: any(limpiar_textos(c) in f_cat for c in str(x).split(',')))]
+            
+        # 4. Subcategoría (Depende de todo lo anterior)
         with c4:
-            # Buscamos subcategorías SOLO de los proyectos que han sobrevivido hasta aquí
-            subs_disponibles = set()
-            if not df_ent.empty:
-                proyectos_visibles = df_filtrado_dinamico["Nombre del Proyecto"].unique()
-                ent_visibles = df_ent[df_ent["Proyecto_Padre"].isin(proyectos_visibles)]
-                for s in ent_visibles["Subcategoría"].dropna(): 
-                    subs_disponibles.update([limpiar_textos(x) for x in str(s).split(',')])
+            subs_disp = set()
+            if not df_e3.empty:
+                # Proyectos visibles hasta ahora
+                proys_visibles = df_embudo["Nombre del Proyecto"].unique()
+                ents_visibles = df_e3[df_e3["Proyecto_Padre"].isin(proys_visibles)]
+                for s in ents_visibles["Subcategoría"].dropna(): 
+                    subs_disp.update([limpiar_textos(x) for x in str(s).split(',')])
             
-            f_sub = st.multiselect("Subcategoría:", sorted(list(subs_disponibles)), key="f_p3_sub")
-            
-            # Filtramos DF Principal si se elige subcategoría
-            if f_sub and not df_ent.empty:
-                ent_con_sub = df_ent[df_ent["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))]
-                proyectos_con_sub = ent_con_sub["Proyecto_Padre"].unique()
-                df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Nombre del Proyecto"].isin(proyectos_con_sub)]
+            f_sub = st.multiselect("Subcategoría:", sorted(list(subs_disp)), key="f3_sub")
+            if f_sub and not df_e3.empty:
+                ents_final = df_e3[df_e3["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))]
+                proys_con_sub = ents_final["Proyecto_Padre"].unique()
+                df_embudo = df_embudo[df_embudo["Nombre del Proyecto"].isin(proys_con_sub)]
 
-        # 5. PROYECTO (Nivel Final - Resultado del Embudo)
+        # 5. Proyecto Final
         with c0:
-            opts_proy = sorted(df_filtrado_dinamico["Nombre del Proyecto"].unique())
-            f_nom = st.multiselect("🔍 Proyecto:", opts_proy, key="f_p3_nom")
-            if f_nom: df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Nombre del Proyecto"].isin(f_nom)]
+            f_nom = st.multiselect("🔍 Proyecto:", sorted(df_embudo["Nombre del Proyecto"].unique()), key="f3_nom")
+            if f_nom: df_embudo = df_embudo[df_embudo["Nombre del Proyecto"].isin(f_nom)]
 
-        # --- GESTIÓN DE MEMORIA (BÚNKER) ---
+        # --- BÚNKER DE MEMORIA P3 ---
         filter_hash = f"{f_ano}{f_nom}{f_per}{f_cat}{f_sub}"
         
         if st.session_state.p3_filter_hash != filter_hash or st.session_state.p3_buffer_proy is None:
-            st.session_state.p3_buffer_proy = df_filtrado_dinamico.copy()
-            
-            # Filtramos entregables para el buffer
-            if not df_ent.empty:
-                # Los entregables deben coincidir con los proyectos filtrados
-                df_ent_filtered = df_ent[df_ent["Proyecto_Padre"].isin(df_filtrado_dinamico["Nombre del Proyecto"].unique())]
+            st.session_state.p3_buffer_proy = df_embudo.copy()
+            if not df_e3.empty:
+                df_ent_filtered = df_e3[df_e3["Proyecto_Padre"].isin(df_embudo["Nombre del Proyecto"].unique())]
                 st.session_state.p3_buffer_ent = df_ent_filtered.copy()
             else:
                 st.session_state.p3_buffer_ent = pd.DataFrame()
-            
             st.session_state.p3_filter_hash = filter_hash
 
-        st.markdown("---")
-        with st.expander(f"📂 1. Tabla de Proyectos ({len(st.session_state.p3_buffer_proy)})", expanded=True):
+        with st.expander(f"📂 Proyectos ({len(st.session_state.p3_buffer_proy)})", expanded=True):
             ed_p = st.data_editor(
-                st.session_state.p3_buffer_proy,
-                width="stretch", 
-                key="editor_p3_proy", 
-                num_rows="fixed", 
+                st.session_state.p3_buffer_proy, 
+                use_container_width=True, 
+                key="ed_p3_p",
+                num_rows="fixed",
                 column_config={
                     "Categoría": st.column_config.TextColumn("Categoría(s)"),
                     "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
@@ -363,189 +350,116 @@ with tab3:
             )
             if st.button("💾 Actualizar Proyectos"):
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
-                df_master_proy = load_data("Proyectos")
-                df_master_proy.update(ed_p) 
-                save_data(df_master_proy, "Proyectos")
-                st.session_state.p3_buffer_proy = ed_p
-                st.success("✅ Actualizado.")
+                df_m = load_data("Proyectos"); df_m.update(ed_p); save_data(df_m, "Proyectos")
+                st.session_state.p3_buffer_proy = ed_p; st.success("✅ Actualizado.")
 
-        with st.expander("📦 2. Entregables Asociados", expanded=True):
+        with st.expander("📦 Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
                 ed_e = st.data_editor(
-                    st.session_state.p3_buffer_ent,
-                    width="stretch", 
-                    key="editor_p3_ent", 
-                    num_rows="fixed", 
+                    st.session_state.p3_buffer_ent, 
+                    use_container_width=True, 
+                    key="ed_p3_e",
                     column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")}
                 )
                 if st.button("💾 Actualizar Entregables"):
                     if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
-                    df_master_ent = load_data("Entregables")
-                    df_master_ent.update(ed_e)
-                    save_data(df_master_ent, "Entregables")
-                    st.session_state.p3_buffer_ent = ed_e
-                    st.success("✅ Actualizado.")
-            else: st.info("No hay entregables para esta selección.")
-
-        with st.expander("🗑️ Zona de Borrado", expanded=False):
-            ops = df_filtrado_dinamico["Nombre del Proyecto"].unique()
-            if len(ops) > 0:
-                d = st.selectbox("Eliminar:", ops)
-                if st.button("Eliminar Definitivamente"):
-                    save_data(df_proy[df_proy["Nombre del Proyecto"]!=d], "Proyectos")
-                    if not df_ent.empty: save_data(df_ent[df_ent["Proyecto_Padre"]!=d], "Entregables")
-                    st.success("Eliminado"); time.sleep(1); st.rerun()
-    else: st.info("Cargando...")
+                    df_m = load_data("Entregables"); df_m.update(ed_e); save_data(df_m, "Entregables")
+                    st.session_state.p3_buffer_ent = ed_e; st.success("✅ Actualizado.")
+            else: st.info("Sin datos.")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (ESTILIZADAS)
+# PESTAÑA 4: GRÁFICAS (SELECTOR DE TIPO)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
-    st.info("ℹ️ **Tip:** Usa los tres puntitos sobre la gráfica para descargar imagen.")
     
-    try: df_p_s = load_data("Proyectos"); df_e_s = load_data("Entregables")
-    except: df_p_s = pd.DataFrame(); df_e_s = pd.DataFrame()
+    # --- SELECTOR DE TIPO DE GRÁFICA ---
+    tipo_g = st.radio("🎨 Estilo de Gráfica:", ["Barras", "Pastel", "Donut"], horizontal=True)
+    st.markdown("---")
 
-    if not df_p_s.empty and "Año" in df_p_s.columns:
-        if "Categoría" in df_p_s.columns: df_p_s["Categoría"] = df_p_s["Categoría"].apply(limpiar_textos)
-        if not df_e_s.empty: df_e_s["Subcategoría"] = df_e_s["Subcategoría"].apply(limpiar_textos)
+    df_pg = load_data("Proyectos"); df_eg = load_data("Entregables")
+    
+    if not df_pg.empty and "Año" in df_pg.columns:
+        # Pre-limpieza
+        if "Categoría" in df_pg.columns: df_pg["Categoría"] = df_pg["Categoría"].apply(limpiar_textos)
+        if not df_eg.empty: df_eg["Subcategoría"] = df_eg["Subcategoría"].apply(limpiar_textos)
 
-        cats_g = set(); subs_g = set()
-        for c in df_p_s["Categoría"].dropna(): cats_g.update([x.strip() for x in str(c).split(',') if x.strip()])
-        if not df_e_s.empty: 
-            for s in df_e_s["Subcategoría"].dropna(): subs_g.update([x.strip() for x in str(s).split(',') if x.strip()])
-
+        # Filtros Gráficos
         c1, c2, c3, c4 = st.columns(4)
-        yg = c1.multiselect("Año", sorted(df_p_s["Año"].unique()), default=sorted(df_p_s["Año"].unique()), key="g_year")
-        pg = c2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="g_per")
-        cg = c3.multiselect("Categoría", sorted(list(cats_g)), key="g_cat")
-        sg = c4.multiselect("Subcategoría", sorted(list(subs_g)), key="g_sub")
+        yg = c1.multiselect("Año", sorted(df_pg["Año"].unique()), default=sorted(df_pg["Año"].unique()), key="g_y")
+        pg = c2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="g_p")
+        cg = c3.multiselect("Categoría", CATEGORIAS_LISTA, key="g_c")
+        sg = c4.multiselect("Subcategoría", sorted(SUBCATEGORIAS_SUGERIDAS), key="g_s")
 
-        df_f = df_p_s.copy()
+        df_f = df_pg.copy()
         if yg: df_f = df_f[df_f["Año"].isin(yg)]
         if pg: df_f = df_f[df_f["Periodo"].astype(str).str.strip().isin(pg)]
-        if cg: df_f = df_f[df_f["Categoría"].apply(lambda x: any(item in cg for item in str(x).split(', ')))]
+        if cg: df_f = df_f[df_f["Categoría"].apply(lambda x: any(c in str(x) for c in cg))]
 
-        df_e_f = df_e_s.copy() if not df_e_s.empty else pd.DataFrame()
-        if sg and not df_e_f.empty:
-            df_e_f = df_e_f[df_e_f["Subcategoría"].apply(lambda x: any(item in sg for item in str(x).split(', ')))]
-            df_f = df_f[df_f["Nombre del Proyecto"].isin(df_e_f["Proyecto_Padre"].unique())]
-
-        if df_f.empty: st.warning("Sin datos.")
-        else:
-            st.markdown("---")
-            if df_f["Año"].nunique() > 0:
-                st.subheader("📅 Evolución Anual / Resumen")
-                pa = df_f["Año"].value_counts().reset_index(); pa.columns=["Año","Total"]; pa["Tipo"]="Proyectos"
+        if not df_f.empty:
+            # 1. EVOLUCIÓN ANUAL (SIEMPRE BARRAS AGRUPADAS)
+            st.subheader("📅 Evolución Anual")
+            pa = df_f["Año"].value_counts().reset_index(); pa.columns=["Año","Total"]; pa["Tipo"]="Proyectos"
+            ea = pd.DataFrame()
+            if not df_eg.empty:
                 vis = df_f["Nombre del Proyecto"].unique()
-                if not df_e_s.empty:
-                    ev = df_e_f[df_e_f["Proyecto_Padre"].isin(vis)] if sg else df_e_s[df_e_s["Proyecto_Padre"].isin(vis)]
+                ev = df_eg[df_eg["Proyecto_Padre"].isin(vis)]
+                if not ev.empty:
                     mapa = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
-                    ev["Año_R"] = ev["Proyecto_Padre"].map(mapa); ev = ev.dropna(subset=["Año_R"])
+                    ev["Año_R"] = ev["Proyecto_Padre"].map(mapa)
                     ea = ev["Año_R"].value_counts().reset_index(); ea.columns=["Año","Total"]; ea["Tipo"]="Entregables"
-                else: ea = pd.DataFrame()
-                
-                df_chart = pd.concat([pa, ea])
-                if not df_chart.empty:
-                    base = alt.Chart(df_chart).encode(
-                        x=alt.X('Año:O', axis=alt.Axis(title='Año', labelAngle=0, labelColor='white', titleColor='white')),
-                        y=alt.Y('Total:Q', axis=alt.Axis(title='Cantidad', labelColor='white', titleColor='white', gridColor='#444444')),
-                        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FF4B4B', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white", orient="top"))
-                    )
-                    bars = base.mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(xOffset='Tipo:N')
-                    text = base.mark_text(dy=-10, color='white').encode(text=alt.Text('Total:Q'), xOffset='Tipo:N')
-                    chart = (bars + text).properties(height=350).configure_view(stroke='transparent')
-                    st.altair_chart(chart, theme="streamlit", use_container_width=True)
             
-            st.markdown("---")
-            k1, k2 = st.columns(2)
-            k1.metric("Proyectos Filtrados", len(df_f))
-            vis = df_f["Nombre del Proyecto"].unique()
-            ev_final = (df_e_f if sg else df_e_s)[(df_e_f if sg else df_e_s)["Proyecto_Padre"].isin(vis)] if not df_e_s.empty else pd.DataFrame()
-            k2.metric("Entregables Asociados", len(ev_final))
+            df_chart = pd.concat([pa, ea])
+            if not df_chart.empty:
+                evol_chart = alt.Chart(df_chart).encode(
+                    x=alt.X('Año:O', axis=alt.Axis(title='Año', labelAngle=0, labelColor='white')),
+                    y=alt.Y('Total:Q', axis=alt.Axis(title='Cantidad', labelColor='white', gridColor='#444444')),
+                    color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FF4B4B', '#FFD700']), legend=alt.Legend(title=None, labelColor='white', orient='top'))
+                ).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(xOffset='Tipo:N').properties(height=350).configure_view(stroke='transparent')
+                st.altair_chart(evol_chart, use_container_width=True)
 
+            # 2. DISTRIBUCIONES (DINÁMICAS)
             st.markdown("---")
-            c1, c2 = st.columns(2)
-            with c1:
+            col_a, col_b = st.columns(2)
+            with col_a:
                 st.subheader("Por Periodo")
-                data_p = df_f["Periodo"].value_counts().reset_index(); data_p.columns=["Periodo", "Total"]
-                graficar_oscuro(data_p, "Periodo", "Total", "Periodo", "Total", "#FFFFFF")
-            with c2:
+                dp = df_f["Periodo"].value_counts().reset_index(); dp.columns=["Periodo", "Total"]
+                graficar_multiformato(dp, "Periodo", "Total", "Periodo", tipo_g, "#FFFFFF")
+            with col_b:
                 st.subheader("Por Categoría")
-                sc = df_f["Categoría"].str.split(',').explode().str.strip(); sc=sc[sc!=""]; sc=sc[sc!="Nan"]
-                data_c = sc.value_counts().reset_index(); data_c.columns=["Categoría", "Total"]
-                graficar_oscuro(data_c, "Categoría", "Total", "Categoría", "Total", "#E0E0E0")
+                sc = df_f["Categoría"].str.split(',').explode().str.strip(); sc = sc[sc!=""]; sc=sc[sc!="nan"]
+                dc = sc.value_counts().reset_index(); dc.columns=["Categoría", "Total"]
+                graficar_multiformato(dc, "Categoría", "Total", "Categoría", tipo_g, "#E0E0E0")
             
             st.markdown("---")
-            st.subheader("📦 Subcategorías")
-            if not ev_final.empty:
-                ss = ev_final["Subcategoría"].str.split(',').explode().str.strip(); ss=ss[ss!=""]; ss=ss[ss!="Nan"]
-                data_s = ss.value_counts().reset_index(); data_s.columns=["Subcategoría", "Total"]
-                graficar_oscuro(data_s, "Subcategoría", "Total", "Subcategoría", "Total", "#CCCCCC")
-
-            st.session_state.stats_download = {
-                "Resumen_Anual": df_chart if 'df_chart' in locals() else pd.DataFrame(),
-                "Por_Periodo": data_p if 'data_p' in locals() else pd.DataFrame(),
-                "Por_Categoría": data_c if 'data_c' in locals() else pd.DataFrame(),
-                "Por_Subcategoría": data_s if 'data_s' in locals() else pd.DataFrame()
-            }
+            st.subheader("📦 Distribución de Subcategorías")
+            if not df_eg.empty:
+                vis = df_f["Nombre del Proyecto"].unique()
+                ev = df_eg[df_eg["Proyecto_Padre"].isin(vis)]
+                if not ev.empty:
+                    ss = ev["Subcategoría"].str.split(',').explode().str.strip(); ss = ss[ss!=""]; ss=ss[ss!="nan"]
+                    ds = ss.value_counts().reset_index(); ds.columns=["Subcategoría", "Total"]
+                    graficar_multiformato(ds, "Subcategoría", "Total", "Subcategoría", tipo_g, "#CCCCCC")
+            
+            st.session_state.stats_download = {"Resumen": df_chart, "Periodo": dp, "Categoría": dc}
 
 # ==========================================
 # PESTAÑA 5: DESCARGAS
 # ==========================================
 with tab5:
-    st.header("📥 Centro de Descargas")
-    
-    st.subheader("1. Base de Datos Completa")
-    if st.button("Generar Respaldo Completo (Excel)"):
+    st.header("📥 Descargas")
+    if st.button("Generar Excel"):
         b = io.BytesIO()
         with pd.ExcelWriter(b, engine='openpyxl') as w: 
             load_data("Proyectos").to_excel(w, 'Proyectos', index=False)
             load_data("Entregables").to_excel(w, 'Entregables', index=False)
         st.download_button("⬇️ Descargar BD.xlsx", b.getvalue(), "Respaldo_Completo.xlsx")
 
-    st.markdown("---")
-    st.subheader("2. Reporte de Gráficas (Datos)")
-    if "stats_download" in st.session_state and not st.session_state.stats_download.get("Resumen_Anual", pd.DataFrame()).empty:
-        if st.button("Generar Reporte Estadístico"):
-            b_stats = io.BytesIO()
-            with pd.ExcelWriter(b_stats, engine='openpyxl') as w:
-                st.session_state.stats_download["Resumen_Anual"].to_excel(w, "Resumen Anual", index=False)
-                st.session_state.stats_download["Por_Periodo"].to_excel(w, "Por Periodo", index=False)
-                st.session_state.stats_download["Por_Categoría"].to_excel(w, "Por Categoría", index=False)
-                st.session_state.stats_download["Por_Subcategoría"].to_excel(w, "Por Subcategoría", index=False)
-            st.download_button("⬇️ Descargar Reporte_Graficas.xlsx", b_stats.getvalue(), "Reporte_Graficas.xlsx")
-    else:
-        st.warning("⚠️ Primero ve a la pestaña 'Gráficas' para generar los datos.")
-
 # ==========================================
 # PESTAÑA 6: GLOSARIO
 # ==========================================
 with tab6:
-    st.header("📖 Glosario de Términos")
+    st.header("📖 Glosario")
     st.markdown("""
-    ### 🗂️ Categorías
-    * **Gestión:** Archivos que tengan que ver con la Dirección integral del proyecto.
-    * **Comunicación:** Diseño y ejecución de mensajes, canales para alinear a internos/externos.
-    * **Infraestructura:** Instalaciones fijas y móviles, planos arquitectónicos, señalética.
-    * **Investigación:** História de la finca, del CEDRAM, mapeos de la zona.
-    
-    ### 📂 Subcategorías
-    
-    #### 🔹 GESTIÓN
-    * **Administración:** Cronogramas, necesidades, planificación.
-    * **Financiamiento:** Becas, presupuestos, donantes.
-    * **Vinculación:** Contacto, relaciones públicas, alianzas.
-    
-    #### 🔹 COMUNICACIÓN
-    * **Memoria/archivo CEDRAM:** Archivos de memoria del equipo del CEDRAM.
-    * **Memoria/archivo PAP:** Archivos de memoria del equipo del PAP.
-    * **Diseño:** Identidad visual, folletos, pósters.
-    * **Difusión:** Redes sociales, campañas, impacto.
-    
-    #### 🔹 INFRAESTRUCTURA
-    * **Diseño arquitectónico:** Planos, renders, conceptos.
-    * **Mantenimiento:** Señalética, remodelación.
-    * **Productos teatrales:** Vestuario, Kamishibai.
+    **Gestión:** Dirección | **Comunicación:** Mensajes | **Infraestructura:** Instalaciones | **Investigación:** Historia.
     """)
