@@ -232,37 +232,44 @@ with tab2:
     df_p = load_data("Proyectos")
     if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
-        idx_defecto = 0
         
-        # LOGICA AUTOMÁTICA: Si hay un proyecto recién creado, lo seleccionamos por defecto
-        if st.session_state.proy_recien_creado in lista_proy:
-            idx_defecto = lista_proy.index(st.session_state.proy_recien_creado)
+        # --- LÓGICA DE AUTO-SELECCIÓN CORREGIDA ---
+        # Si existe un proyecto recién creado, forzamos al widget a tomar ese valor
+        if st.session_state.proy_recien_creado:
+            # Si por lag de la API de Google Sheets el proyecto aún no está en la lista cargada, lo agregamos visualmente
+            if st.session_state.proy_recien_creado not in lista_proy:
+                lista_proy.append(st.session_state.proy_recien_creado)
+                lista_proy.sort()
             
-        proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, index=idx_defecto, key="selector_masivo")
+            # MAGIA: Forzamos la llave del widget en session_state antes de crear el widget
+            st.session_state["selector_masivo"] = st.session_state.proy_recien_creado
+
+        proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, key="selector_masivo")
         
-        info = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
-        cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
+        info = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0] if proy_sel in df_p["Nombre del Proyecto"].values else pd.Series()
+        cat = info.get("Categoría", "General") if not info.empty else "Nuevo"
+        estim = int(info.get("Num_Entregables", 5)) if not info.empty else 5
+        
         st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
-        # LOGICA REFORZADA: Si cambiamos de proyecto O si es el recién creado (para forzar la tabla vacía)
+        # Detectamos si es el nuevo para forzar la tabla vacía
         es_nuevo = (proy_sel == st.session_state.proy_recien_creado)
-        
+
         if st.session_state.last_selected_project != proy_sel or es_nuevo:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             
-            # Si es el proyecto nuevo, IGNORAMOS si hay datos previos (seguramente no) y forzamos la plantilla vacía
-            # Esto corrige el error donde no se ponían las filas automáticamente
+            # Si es nuevo, forzamos tabla vacía IGNORANDO si hay datos previos (que no debería)
             if not exist.empty and not es_nuevo:
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                # Generamos las filas vacías basadas en el número estimado
+                # Generamos las filas vacías
                 temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías"])
             
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
             
-            # Limpiamos la bandera de "recién creado" una vez que ya cargamos su plantilla
+            # Una vez cargado el nuevo, limpiamos la variable para que el usuario pueda cambiar de proyecto libremente después
             if es_nuevo:
                 st.session_state.proy_recien_creado = None 
 
