@@ -114,17 +114,19 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS DINÁMICAS ---
+# --- FUNCIÓN DE GRÁFICAS DINÁMICAS CON ETIQUETAS NUMÉRICAS ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos para graficar.")
         return
 
+    # Base de datos común
     base = alt.Chart(df).encode(
         tooltip=[x_col, y_col]
     )
 
     if tipo_grafica == "Barras":
+        # Barras con texto encima
         bars = base.mark_bar(color=color_base, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
             x=alt.X(x_col, title=None, sort='-y', axis=alt.Axis(labelColor='white', labelAngle=-45)),
             y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444'))
@@ -132,11 +134,12 @@ def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#F
         text = base.mark_text(dy=-10, color='white', fontSize=14, fontWeight='bold').encode(
             x=alt.X(x_col, sort='-y'),
             y=alt.Y(y_col),
-            text=alt.Text(y_col)
+            text=alt.Text(y_col) # Muestra el número
         )
         chart = bars + text
 
     else:
+        # Pastel o Donut con texto en el centro de la sección
         radio_interno = 60 if tipo_grafica == "Donut" else 0
         pie = base.mark_arc(innerRadius=radio_interno, outerRadius=120, stroke="#262730", strokeWidth=2).encode(
             theta=alt.Theta(field=y_col, type="quantitative"),
@@ -146,7 +149,7 @@ def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#F
         text = base.mark_text(radius=140, fill="white", fontSize=14, fontWeight='bold').encode(
             theta=alt.Theta(field=y_col, type="quantitative", stack=True),
             order=alt.Order(field=y_col, sort="descending"),
-            text=alt.Text(y_col),
+            text=alt.Text(y_col), # Muestra el número
             color=alt.value("white") 
         )
         chart = pie + text
@@ -235,11 +238,9 @@ with tab2:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             if not exist.empty:
-                # MODIFICADO: Solo traemos Nombre, Contenido, Subcategoría (quitamos Plantillas)
-                temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
+                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"})
             else:
-                # MODIFICADO: Solo columnas Nombre, Contenido, Subcategorías
-                temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías"])
+                temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías", "Plantillas_Usadas"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -247,7 +248,7 @@ with tab2:
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo, 
                 num_rows="dynamic", 
-                use_container_width=True, 
+                use_container_width=True, # Compatibilidad
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
@@ -275,7 +276,7 @@ with tab2:
                             "Contenido": r["Contenido"], 
                             "Categoría": cat, 
                             "Subcategoría": r["Subcategorías"], 
-                            "Plantillas": "", # MODIFICADO: Se manda vacío o se omite
+                            "Plantillas": r["Plantillas_Usadas"], 
                             "Fecha_Registro": hoy
                         })
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
@@ -365,41 +366,15 @@ with tab3:
                     "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
                 }
             )
-            c_save, c_del = st.columns([1, 1])
-            with c_save:
-                if st.button("💾 Actualizar Proyectos"):
-                    if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
-                    df_m = load_data("Proyectos"); df_m.update(ed_p); save_data(df_m, "Proyectos")
-                    st.session_state.p3_buffer_proy = ed_p; st.success("✅ Actualizado.")
-            
-            # MODIFICADO: Funcionalidad de Borrar Proyecto Completo
-            with c_del:
-                if st.button("🗑️ BORRAR PROYECTO(S) VISIBLE(S)", type="primary"):
-                    proyectos_a_borrar = st.session_state.p3_buffer_proy["Nombre del Proyecto"].unique().tolist()
-                    if proyectos_a_borrar:
-                        # Cargar bases completas
-                        df_p_master = load_data("Proyectos")
-                        df_e_master = load_data("Entregables")
-                        
-                        # Filtrar (quedarse con lo que NO está en la lista de borrar)
-                        df_p_new = df_p_master[~df_p_master["Nombre del Proyecto"].isin(proyectos_a_borrar)]
-                        df_e_new = df_e_master[~df_e_master["Proyecto_Padre"].isin(proyectos_a_borrar)]
-                        
-                        # Guardar cambios
-                        save_data(df_p_new, "Proyectos")
-                        save_data(df_e_new, "Entregables")
-                        
-                        st.success(f"Se eliminaron {len(proyectos_a_borrar)} proyecto(s) y sus entregables.")
-                        st.session_state.p3_buffer_proy = None # Reset buffer
-                        time.sleep(1); st.rerun()
+            if st.button("💾 Actualizar Proyectos"):
+                if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
+                df_m = load_data("Proyectos"); df_m.update(ed_p); save_data(df_m, "Proyectos")
+                st.session_state.p3_buffer_proy = ed_p; st.success("✅ Actualizado.")
 
         with st.expander("📦 Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
-                # MODIFICADO: Filtramos solo las columnas permitidas para ver/editar
-                cols_permitidas = [c for c in ["Entregable", "Contenido", "Subcategoría"] if c in st.session_state.p3_buffer_ent.columns]
-                
                 ed_e = st.data_editor(
-                    st.session_state.p3_buffer_ent[cols_permitidas], # Solo mostramos estas columnas
+                    st.session_state.p3_buffer_ent, 
                     use_container_width=True, 
                     key="ed_p3_e",
                     column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")}
