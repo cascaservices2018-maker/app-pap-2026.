@@ -16,6 +16,14 @@ st.set_page_config(
 )
 
 # ==========================================
+# 🔗 CONFIGURACIÓN SISTEMA (CONSTANTES)
+# ==========================================
+LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
+
+CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
+SUBCATEGORIAS_SUGERIDAS = ["Administración", "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
+
+# ==========================================
 # 🎨 PERSONALIZACIÓN DE COLORES (CSS)
 # ==========================================
 COLOR_FONDO_PRINCIPAL = "#A60000"
@@ -36,10 +44,8 @@ estilos_css = f"""
 st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 DICCIONARIO Y CONSTANTES
+# 📖 DICCIONARIO INTELIGENTE
 # ==========================================
-LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
-
 DICCIONARIO_CORRECTO = {
     "diseno arquitectonico": "Diseño arquitectónico", "diseño arquitectonico": "Diseño arquitectónico",
     "arquitectonico": "Diseño arquitectónico", "arquitectura": "Diseño arquitectónico",
@@ -52,10 +58,6 @@ DICCIONARIO_CORRECTO = {
     "grafico": "Diseño", "difusion": "Difusión", "dufusion": "Difusión",
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo", "investigacion": "Investigación"
 }
-
-CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
-SUBCATEGORIAS_SUGERIDAS = ["Administración", "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
-ESTATUS_OPCIONES = ["Completado", "En Proceso", "Pendiente", "Pausado", "Cancelado"]
 
 def normalizar_comparacion(texto):
     if pd.isna(texto): return ""
@@ -90,11 +92,7 @@ def load_data(sheet_name):
             df.columns = df.columns.str.strip() 
             if "Periodo" in df.columns:
                 df["Periodo"] = df["Periodo"].astype(str).str.strip().str.title()
-            # Asegurar nuevas columnas de seguimiento
-            if "Estatus" not in df.columns: df["Estatus"] = "Pendiente"
-            if "Responsable" not in df.columns: df["Responsable"] = ""
-            if "Observaciones" not in df.columns: df["Observaciones"] = ""
-        return df.fillna("")
+        return df
     except: return pd.DataFrame()
 
 def save_data(df, sheet_name):
@@ -103,7 +101,7 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS CON ETIQUETAS ---
+# --- FUNCIÓN DE GRÁFICAS ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos.")
@@ -133,7 +131,7 @@ def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#F
         chart = pie + text
     st.altair_chart(chart.properties(height=350).configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
-# --- ESTADOS ---
+# --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
 if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = None
@@ -155,7 +153,7 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas y Seguimiento", "5. 📥 Descargas", "6. Glosario"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas", "5. 📥 Descargas", "6. Glosario"])
 
 # ==========================================
 # PESTAÑA 1: REGISTRO
@@ -181,7 +179,7 @@ with tab1:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (SIN PLANTILLAS)
+# PESTAÑA 2: CARGA MASIVA (LIMPIO)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -198,11 +196,10 @@ with tab2:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             if not exist.empty:
-                # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Estatus", "Responsable", "Observaciones"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
+                # SOLO COLUMNAS BÁSICAS
+                temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías", "Estatus", "Responsable", "Observaciones"])
+                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -211,12 +208,9 @@ with tab2:
                 st.session_state.df_buffer_masivo, num_rows="dynamic", use_container_width=True,
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
-                    "Estatus": st.column_config.SelectboxColumn("Estatus", options=ESTATUS_OPCIONES, required=True, default="Pendiente"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
-                    "Contenido": st.column_config.TextColumn("Contenido", width="large"),
-                    "Responsable": st.column_config.TextColumn("Responsable", width="medium"),
-                    "Observaciones": st.column_config.TextColumn("Observaciones", width="large")
-                    # SE ELIMINÓ LA CONFIGURACIÓN DE PLANTILLAS
+                    "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                    # SIN PLANTILLAS NI ESTATUS
                 }
             )
             if st.form_submit_button("🚀 Guardar Cambios"):
@@ -233,9 +227,6 @@ with tab2:
                     nuevos.append({
                         "Proyecto_Padre": proy_sel, "Entregable": r["Nombre"], "Contenido": r["Contenido"],
                         "Categoría": cat, "Subcategoría": r["Subcategorías"], 
-                        "Estatus": r["Estatus"] if r["Estatus"] else "Pendiente",
-                        "Responsable": r["Responsable"], "Observaciones": r["Observaciones"],
-                        # SE ELIMINÓ EL CAMPO 'Plantillas' AQUÍ
                         "Fecha_Registro": hoy
                     })
                 save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
@@ -243,7 +234,7 @@ with tab2:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 3: EDICIÓN (SIN PLANTILLAS Y CORREGIDO)
+# PESTAÑA 3: EDICIÓN (LIMPIO)
 # ==========================================
 with tab3:
     st.header("📝 Edición")
@@ -261,7 +252,6 @@ with tab3:
             fp = st.multiselect("Periodo", sorted(df_emb["Periodo"].unique()), key="f3p")
             if fp: df_emb = df_emb[df_emb["Periodo"].isin(fp)]
         
-        # --- CORRECCIÓN DE LOS CUADROS NEGROS ---
         with c3:
             cats = set()
             for c in df_emb["Categoría"].dropna():
@@ -295,20 +285,27 @@ with tab3:
             if st.button("Actualizar Proyectos"):
                 m = load_data("Proyectos"); m.update(ed_p); save_data(m, "Proyectos"); st.success("OK")
 
-        with st.expander("Entregables (Seguimiento)", expanded=True):
+        with st.expander("Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
-                # FILTRO PARA QUITAR COLUMNA 'Plantillas' DE LA VISTA
-                cols_ok = [c for c in st.session_state.p3_buffer_ent.columns if c not in ["Plantillas", "Plantillas_Usadas"]]
-                ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_ok], use_container_width=True, key="ee3", 
-                    column_config={
-                        "Estatus": st.column_config.SelectboxColumn("Estatus", options=ESTATUS_OPCIONES),
-                        "Subcategoría": st.column_config.TextColumn("Subcategoría")
-                    })
+                # FILTRO FINAL: Solo columnas básicas. Sin Estatus, Responsable ni Plantillas.
+                cols_basicas = ["Entregable", "Contenido", "Subcategoría", "Fecha_Registro"]
+                # Aseguramos que existan en el DF antes de seleccionar
+                cols_a_mostrar = [c for c in cols_basicas if c in st.session_state.p3_buffer_ent.columns]
+                
+                ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_a_mostrar], use_container_width=True, key="ee3", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
+                
                 if st.button("Actualizar Entregables"):
-                    m = load_data("Entregables"); m.update(ed_e); save_data(m, "Entregables"); st.success("OK")
+                    m = load_data("Entregables")
+                    # Actualizamos solo las columnas visibles
+                    m.update(ed_e) 
+                    save_data(m, "Entregables")
+                    # Actualizamos buffer visual
+                    st.session_state.p3_buffer_ent.update(ed_e)
+                    st.success("OK")
+            else: st.info("Sin datos.")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS Y SEGUIMIENTO
+# PESTAÑA 4: GRÁFICAS (SIN GRAFICA DE ESTATUS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
