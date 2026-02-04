@@ -120,7 +120,8 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
         y=alt.Y(y_col, title=titulo_y),
         tooltip=[x_col, y_col]
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
-    st.altair_chart(chart, theme="streamlit", width="stretch")
+    # CORRECCIÓN: Volvemos a use_container_width=True para gráficas por compatibilidad
+    st.altair_chart(chart, theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
@@ -175,7 +176,7 @@ with tab1:
                     
                     # --- AUTO-SELECCIÓN PARA PESTAÑA 2 ---
                     st.session_state.proy_recien_creado = nombre
-                    st.session_state["selector_proyectos_masivo"] = nombre # <--- ESTO FUERZA EL CAMBIO
+                    st.session_state["selector_proyectos_masivo"] = nombre
                     
                     st.session_state.form_seed += 1
                     time.sleep(1); st.rerun()
@@ -193,8 +194,6 @@ with tab2:
 
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         
-        # El índice por defecto ya no es tan crítico porque forzamos el session_state arriba, 
-        # pero lo dejamos por si acaso.
         idx_defecto = 0
         if st.session_state.proy_recien_creado in lista_proy:
             idx_defecto = lista_proy.index(st.session_state.proy_recien_creado)
@@ -219,16 +218,15 @@ with tab2:
             else:
                 temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"])
 
-            # Inicializamos el buffer limpio
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
-        # --- FORMULARIO DE AISLAMIENTO (st.form) ---
+        # --- FORMULARIO ---
         with st.form(key=f"form_masivo_{proy_sel}"):
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo,
                 num_rows="dynamic",
-                width="stretch",
+                width="stretch", 
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
@@ -239,12 +237,10 @@ with tab2:
 
             submit_btn = st.form_submit_button("🚀 Guardar Cambios (Definitivo)")
 
-        # --- LÓGICA DE GUARDADO (FUERA DEL FORM, SE ACTIVA AL ENVIAR) ---
+        # --- LÓGICA DE GUARDADO ---
         if submit_btn:
-            # 1. Sanitización Final
             df_final_process = edited_df.astype(str).replace({"nan": "", "None": "", "NaN": ""})
 
-            # 2. Filtrar vacíos
             validos = df_final_process[
                 (df_final_process["Nombre_Entregable"].str.strip() != "")
             ].copy()
@@ -252,11 +248,9 @@ with tab2:
             if validos.empty: st.error("La tabla está vacía o no tiene nombres.")
             else:
                 try:
-                    # 3. Aplicar diccionario y preparar datos
                     validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
                     df_m = load_data("Entregables")
 
-                    # Eliminar registros previos de este proyecto
                     if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
 
                     nuevos = []
@@ -272,10 +266,7 @@ with tab2:
                             "Fecha_Registro": hoy
                         })
 
-                    # 4. Guardar en Google Sheets
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
-
-                    # 5. Actualizar la memoria local
                     st.session_state.df_buffer_masivo = df_final_process
 
                     st.success("¡Guardado exitoso!")
@@ -401,14 +392,31 @@ with tab4:
 
                 df_chart = pd.concat([pa, ea])
                 if not df_chart.empty:
-                    base = alt.Chart(df_chart).encode(
-                        x=alt.X('Tipo:N', axis=None),
-                        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                    
+                    # --- GRÁFICA CORREGIDA (AGRUPADA) ---
+                    chart_base = alt.Chart(df_chart).encode(
+                        x=alt.X('Año:O', title='Año', axis=alt.Axis(labelColor='white', titleColor='white')),
+                        y=alt.Y('Total:Q', title='Cantidad', axis=alt.Axis(labelColor='white', titleColor='white', grid=False)),
+                        color=alt.Color('Tipo:N', 
+                            scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), 
+                            legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white", orient="bottom")
+                        ),
+                        tooltip=['Año', 'Tipo', 'Total']
                     )
-                    bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
-                    text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text=alt.Text('Total:Q'))
-                    chart = alt.layer(bars, text).properties(width='container', height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
-                    st.altair_chart(chart, width="stretch")
+
+                    # Barras Agrupadas con xOffset
+                    bars = chart_base.mark_bar().encode(
+                        xOffset='Tipo:N'
+                    )
+
+                    # Etiquetas de texto
+                    text = chart_base.mark_text(dy=-10, color='white').encode(
+                        text='Total:Q',
+                        xOffset='Tipo:N'
+                    )
+
+                    final_chart = (bars + text).properties(height=350).configure_view(stroke='transparent')
+                    st.altair_chart(final_chart, use_container_width=True)
 
             st.markdown("---")
             k1, k2 = st.columns(2)
