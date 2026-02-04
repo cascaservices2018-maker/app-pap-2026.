@@ -238,9 +238,11 @@ with tab2:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             if not exist.empty:
-                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"})
+                # MODIFICACIÓN: Se eliminó "Plantillas" del selector
+                temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías", "Plantillas_Usadas"])
+                # MODIFICACIÓN: Se eliminó "Plantillas_Usadas"
+                temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -276,7 +278,7 @@ with tab2:
                             "Contenido": r["Contenido"], 
                             "Categoría": cat, 
                             "Subcategoría": r["Subcategorías"], 
-                            "Plantillas": r["Plantillas_Usadas"], 
+                            "Plantillas": "", # MODIFICACIÓN: Se deja vacío
                             "Fecha_Registro": hoy
                         })
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
@@ -373,17 +375,57 @@ with tab3:
 
         with st.expander("📦 Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
+                # MODIFICACIÓN: Se filtran las columnas no deseadas para la vista
+                columnas_a_excluir = ["Plantillas", "Responsable", "Estatus", "Observaciones"]
+                cols_visibles = [c for c in st.session_state.p3_buffer_ent.columns if c not in columnas_a_excluir]
+                
                 ed_e = st.data_editor(
-                    st.session_state.p3_buffer_ent, 
+                    st.session_state.p3_buffer_ent[cols_visibles], # Solo mostramos las columnas deseadas
                     use_container_width=True, 
                     key="ed_p3_e",
                     column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")}
                 )
                 if st.button("💾 Actualizar Entregables"):
                     if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
-                    df_m = load_data("Entregables"); df_m.update(ed_e); save_data(df_m, "Entregables")
-                    st.session_state.p3_buffer_ent = ed_e; st.success("✅ Actualizado.")
+                    df_m = load_data("Entregables")
+                    df_m.update(ed_e) # Update solo actualiza las columnas presentes en ed_e
+                    save_data(df_m, "Entregables")
+                    
+                    # Actualizamos el buffer con los cambios hechos, recuperando las columnas ocultas
+                    merged_buffer = st.session_state.p3_buffer_ent.copy()
+                    merged_buffer.update(ed_e)
+                    st.session_state.p3_buffer_ent = merged_buffer
+                    st.success("✅ Actualizado.")
             else: st.info("Sin datos.")
+
+        # MODIFICACIÓN: NUEVA SECCIÓN PARA BORRAR PROYECTO
+        st.markdown("---")
+        st.subheader("🗑️ Zona de Peligro: Borrar Proyecto")
+        st.warning("Esta acción borrará el proyecto y TODOS sus entregables asociados. No se puede deshacer.")
+        
+        lista_borrar = sorted(df_embudo["Nombre del Proyecto"].unique())
+        proy_borrar = st.selectbox("Seleccionar Proyecto a Eliminar Definitivamente:", options=lista_borrar, key="borrar_selector")
+        
+        if st.button("🚨 BORRAR PROYECTO Y SUS ENTREGABLES"):
+            if proy_borrar:
+                # Cargar datos frescos
+                full_proy = load_data("Proyectos")
+                full_ent = load_data("Entregables")
+                
+                # Filtrar eliminando el seleccionado
+                new_proy = full_proy[full_proy["Nombre del Proyecto"] != proy_borrar]
+                new_ent = full_ent[full_ent["Proyecto_Padre"] != proy_borrar]
+                
+                # Guardar
+                save_data(new_proy, "Proyectos")
+                save_data(new_ent, "Entregables")
+                
+                st.success(f"Proyecto '{proy_borrar}' eliminado correctamente.")
+                # Limpiar buffers
+                st.session_state.p3_buffer_proy = None
+                st.session_state.p3_buffer_ent = None
+                time.sleep(1)
+                st.rerun()
 
 # ==========================================
 # PESTAÑA 4: GRÁFICAS (SELECTOR + ETIQUETAS NUMÉRICAS)
