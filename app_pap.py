@@ -115,12 +115,12 @@ def save_data(df, sheet_name):
     except Exception as e: st.error(f"Error al guardar: {e}")
 
 def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FF4B4B"):
-    # Estilización: Barras redondeadas, sin bordes, ejes limpios
+    # Estilo premium: Barras redondeadas, sin bordes, ejes limpios
     chart = alt.Chart(df).mark_bar(color=color_barra, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
         x=alt.X(x_col, title=titulo_x, sort='-y', axis=alt.Axis(labelColor='white', titleColor='white', labelAngle=-45)),
         y=alt.Y(y_col, title=titulo_y, axis=alt.Axis(labelColor='white', titleColor='white', gridColor='#444444')),
         tooltip=[x_col, y_col]
-    ).properties(height=320).configure_view(stroke='transparent') # Elimina el borde blanco del cuadro
+    ).properties(height=320).configure_view(stroke='transparent')
     st.altair_chart(chart, theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
@@ -267,53 +267,81 @@ with tab2:
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: BÚSQUEDA Y EDICIÓN
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (FILTROS EN CASCADA TOTAL)
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
-    st.info("💡 **Edición Segura:** Filtra primero. Luego edita todo lo que quieras. Pulsa 'Guardar' para confirmar.")
+    st.info("💡 **Filtros Inteligentes:** Al seleccionar un año o categoría, el resto de opciones se ajusta automáticamente.")
     
     df_proy = load_data("Proyectos"); df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
+        # Preprocesamiento de texto
         if "Categoría" in df_proy.columns: df_proy["Categoría"] = df_proy["Categoría"].apply(limpiar_textos)
         if not df_ent.empty: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
 
-        cats_f = set(); subs_f = set()
-        for c in df_proy["Categoría"].dropna(): cats_f.update([limpiar_textos(x) for x in str(c).split(',')])
-        if not df_ent.empty: 
-            for s in df_ent["Subcategoría"].dropna(): subs_f.update([limpiar_textos(x) for x in str(s).split(',')])
+        # --- LÓGICA DE CASCADA (EMBUDO DE DATOS) ---
+        # Empezamos con todos los datos
+        df_filtrado_dinamico = df_proy.copy()
 
         c0, c1, c2, c3, c4 = st.columns(5)
-        with c1: f_ano = st.multiselect("Año:", sorted(df_proy["Año"].unique()), key="f_p3_ano")
         
-        df_posibles = df_proy.copy()
-        if f_ano: df_posibles = df_proy[df_proy["Año"].isin(f_ano)]
+        # 1. AÑO (Nivel 1)
+        with c1:
+            opts_ano = sorted(df_proy["Año"].unique())
+            f_ano = st.multiselect("Año:", opts_ano, key="f_p3_ano")
+            if f_ano: df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Año"].isin(f_ano)]
 
-        with c0: f_nom = st.multiselect("🔍 Proyecto:", sorted(df_posibles["Nombre del Proyecto"].unique()), key="f_p3_nom")
-        with c2: f_per = st.multiselect("Periodo:", ["Primavera", "Verano", "Otoño"], key="f_p3_per")
-        with c3: f_cat = st.multiselect("Categoría:", sorted(list(cats_f)), key="f_p3_cat")
-        with c4: f_sub = st.multiselect("Subcategoría:", sorted(list(subs_f)), key="f_p3_sub")
+        # 2. PERIODO (Nivel 2 - Depende de Año)
+        with c2:
+            opts_per = sorted(df_filtrado_dinamico["Periodo"].unique()) # Solo periodos disponibles
+            f_per = st.multiselect("Periodo:", opts_per, key="f_p3_per")
+            if f_per: df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Periodo"].astype(str).str.strip().isin(f_per)]
 
-        df_v = df_proy.copy(); df_ev = df_ent.copy() if not df_ent.empty else pd.DataFrame()
+        # 3. CATEGORÍA (Nivel 3 - Depende de Año y Periodo)
+        with c3:
+            # Extraemos categorías únicas del DF ya filtrado
+            cats_disponibles = set()
+            for c in df_filtrado_dinamico["Categoría"].dropna(): 
+                cats_disponibles.update([limpiar_textos(x) for x in str(c).split(',')])
+            f_cat = st.multiselect("Categoría:", sorted(list(cats_disponibles)), key="f_p3_cat")
+            if f_cat: 
+                df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Categoría"].apply(lambda x: any(limpiar_textos(c) in f_cat for c in str(x).split(',')))]
 
-        if f_ano: df_v = df_v[df_v["Año"].isin(f_ano)]
-        if f_nom: df_v = df_v[df_v["Nombre del Proyecto"].isin(f_nom)]
-        if f_per: df_v = df_v[df_v["Periodo"].astype(str).str.strip().isin(f_per)]
-        if f_cat: df_v = df_v[df_v["Categoría"].apply(lambda x: any(limpiar_textos(c) in f_cat for c in str(x).split(',')))]
-        
-        if f_sub and not df_ev.empty:
-            df_ev = df_ev[df_ev["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))]
-            df_v = df_v[df_v["Nombre del Proyecto"].isin(df_ev["Proyecto_Padre"].unique())]
+        # 4. SUBCATEGORÍA (Nivel 4 - El más complejo)
+        with c4:
+            # Buscamos subcategorías SOLO de los proyectos que han sobrevivido hasta aquí
+            subs_disponibles = set()
+            if not df_ent.empty:
+                proyectos_visibles = df_filtrado_dinamico["Nombre del Proyecto"].unique()
+                ent_visibles = df_ent[df_ent["Proyecto_Padre"].isin(proyectos_visibles)]
+                for s in ent_visibles["Subcategoría"].dropna(): 
+                    subs_disponibles.update([limpiar_textos(x) for x in str(s).split(',')])
+            
+            f_sub = st.multiselect("Subcategoría:", sorted(list(subs_disponibles)), key="f_p3_sub")
+            
+            # Filtramos DF Principal si se elige subcategoría
+            if f_sub and not df_ent.empty:
+                ent_con_sub = df_ent[df_ent["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))]
+                proyectos_con_sub = ent_con_sub["Proyecto_Padre"].unique()
+                df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Nombre del Proyecto"].isin(proyectos_con_sub)]
 
-        # --- MEMORIA BÚNKER ---
+        # 5. PROYECTO (Nivel Final - Resultado del Embudo)
+        with c0:
+            opts_proy = sorted(df_filtrado_dinamico["Nombre del Proyecto"].unique())
+            f_nom = st.multiselect("🔍 Proyecto:", opts_proy, key="f_p3_nom")
+            if f_nom: df_filtrado_dinamico = df_filtrado_dinamico[df_filtrado_dinamico["Nombre del Proyecto"].isin(f_nom)]
+
+        # --- GESTIÓN DE MEMORIA (BÚNKER) ---
         filter_hash = f"{f_ano}{f_nom}{f_per}{f_cat}{f_sub}"
         
         if st.session_state.p3_filter_hash != filter_hash or st.session_state.p3_buffer_proy is None:
-            st.session_state.p3_buffer_proy = df_v.copy()
+            st.session_state.p3_buffer_proy = df_filtrado_dinamico.copy()
+            
+            # Filtramos entregables para el buffer
             if not df_ent.empty:
-                if f_sub: df_ent_filtered = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
-                else: df_ent_filtered = df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
+                # Los entregables deben coincidir con los proyectos filtrados
+                df_ent_filtered = df_ent[df_ent["Proyecto_Padre"].isin(df_filtrado_dinamico["Nombre del Proyecto"].unique())]
                 st.session_state.p3_buffer_ent = df_ent_filtered.copy()
             else:
                 st.session_state.p3_buffer_ent = pd.DataFrame()
@@ -360,7 +388,7 @@ with tab3:
             else: st.info("No hay entregables para esta selección.")
 
         with st.expander("🗑️ Zona de Borrado", expanded=False):
-            ops = df_v["Nombre del Proyecto"].unique()
+            ops = df_filtrado_dinamico["Nombre del Proyecto"].unique()
             if len(ops) > 0:
                 d = st.selectbox("Eliminar:", ops)
                 if st.button("Eliminar Definitivamente"):
@@ -420,23 +448,13 @@ with tab4:
                 
                 df_chart = pd.concat([pa, ea])
                 if not df_chart.empty:
-                    # GRÁFICA ESTILIZADA: Agrupada + Colores + Bordes redondeados
                     base = alt.Chart(df_chart).encode(
                         x=alt.X('Año:O', axis=alt.Axis(title='Año', labelAngle=0, labelColor='white', titleColor='white')),
                         y=alt.Y('Total:Q', axis=alt.Axis(title='Cantidad', labelColor='white', titleColor='white', gridColor='#444444')),
                         color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FF4B4B', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white", orient="top"))
                     )
-                    
-                    # Barras agrupadas con offset para ver ambos años claramente
-                    bars = base.mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-                        xOffset='Tipo:N'
-                    )
-                    
-                    text = base.mark_text(dy=-10, color='white').encode(
-                        text=alt.Text('Total:Q'),
-                        xOffset='Tipo:N'
-                    )
-                    
+                    bars = base.mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(xOffset='Tipo:N')
+                    text = base.mark_text(dy=-10, color='white').encode(text=alt.Text('Total:Q'), xOffset='Tipo:N')
                     chart = (bars + text).properties(height=350).configure_view(stroke='transparent')
                     st.altair_chart(chart, theme="streamlit", use_container_width=True)
             
