@@ -38,7 +38,6 @@ st.markdown(estilos_css, unsafe_allow_html=True)
 # ==========================================
 # 📖 DICCIONARIO Y CONSTANTES
 # ==========================================
-# --- AQUÍ ESTABA EL ERROR, YA AGREGUÉ EL LOGO ---
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
 
 DICCIONARIO_CORRECTO = {
@@ -95,7 +94,7 @@ def load_data(sheet_name):
             if "Estatus" not in df.columns: df["Estatus"] = "Pendiente"
             if "Responsable" not in df.columns: df["Responsable"] = ""
             if "Observaciones" not in df.columns: df["Observaciones"] = ""
-        return df
+        return df.fillna("")
     except: return pd.DataFrame()
 
 def save_data(df, sheet_name):
@@ -244,7 +243,7 @@ with tab2:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 3: EDICIÓN (SIN PLANTILLAS)
+# PESTAÑA 3: EDICIÓN (SIN PLANTILLAS Y CORREGIDO)
 # ==========================================
 with tab3:
     st.header("📝 Edición")
@@ -261,18 +260,26 @@ with tab3:
         with c2:
             fp = st.multiselect("Periodo", sorted(df_emb["Periodo"].unique()), key="f3p")
             if fp: df_emb = df_emb[df_emb["Periodo"].isin(fp)]
+        
+        # --- CORRECCIÓN DE LOS CUADROS NEGROS ---
         with c3:
-            cats = set(); [cats.update([limpiar_textos(x) for x in str(c).split(',')]) for c in df_emb["Categoría"].dropna()]
+            cats = set()
+            for c in df_emb["Categoría"].dropna():
+                cats.update([limpiar_textos(x) for x in str(c).split(',')])
             fc = st.multiselect("Categoría", sorted(list(cats)), key="f3c")
             if fc: df_emb = df_emb[df_emb["Categoría"].apply(lambda x: any(c in str(x) for c in fc))]
+        
         with c4:
             subs = set()
             if not df_e3.empty:
                 vis = df_emb["Nombre del Proyecto"].unique()
-                [subs.update([limpiar_textos(x) for x in str(s).split(',')]) for s in df_e3[df_e3["Proyecto_Padre"].isin(vis)]["Subcategoría"].dropna()]
+                ents_vis = df_e3[df_e3["Proyecto_Padre"].isin(vis)]
+                for s in ents_vis["Subcategoría"].dropna():
+                    subs.update([limpiar_textos(x) for x in str(s).split(',')])
             fs = st.multiselect("Subcategoría", sorted(list(subs)), key="f3s")
             if fs and not df_e3.empty:
                 df_emb = df_emb[df_emb["Nombre del Proyecto"].isin(df_e3[df_e3["Subcategoría"].apply(lambda x: any(s in str(x) for s in fs))]["Proyecto_Padre"])]
+        
         with c0:
             fn = st.multiselect("Proyecto", sorted(df_emb["Nombre del Proyecto"].unique()), key="f3n")
             if fn: df_emb = df_emb[df_emb["Nombre del Proyecto"].isin(fn)]
