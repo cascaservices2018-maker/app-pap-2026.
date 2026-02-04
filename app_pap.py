@@ -38,6 +38,9 @@ st.markdown(estilos_css, unsafe_allow_html=True)
 # ==========================================
 # 📖 DICCIONARIO Y CONSTANTES
 # ==========================================
+# --- AQUÍ ESTABA EL ERROR, YA AGREGUÉ EL LOGO ---
+LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
+
 DICCIONARIO_CORRECTO = {
     "diseno arquitectonico": "Diseño arquitectónico", "diseño arquitectonico": "Diseño arquitectónico",
     "arquitectonico": "Diseño arquitectónico", "arquitectura": "Diseño arquitectónico",
