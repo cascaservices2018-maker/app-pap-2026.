@@ -33,10 +33,10 @@ estilos_css = f"""
 st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 DICCIONARIO INTELIGENTE (JERARQUIZADO)
+# 📖 DICCIONARIO INTELIGENTE
 # ==========================================
 DICCIONARIO_CORRECTO = {
-    # INFRAESTRUCTURA (Prioridad Alta)
+    # INFRAESTRUCTURA
     "diseno arquitectonico": "Diseño arquitectónico",
     "diseño arquitectonico": "Diseño arquitectónico",
     "arquitectonico": "Diseño arquitectónico", 
@@ -46,37 +46,31 @@ DICCIONARIO_CORRECTO = {
     "teatrales": "Productos teatrales",
     "productos": "Productos teatrales",
     "producto": "Productos teatrales",
-    
     # GESTIÓN
     "administracion": "Administración", "admin": "Administración",
     "financiamiento": "Financiamiento", "finanza": "Financiamiento",
     "vinculacion": "Vinculación", "vinc": "Vinculación",
     "gestion": "Gestión", "gestión": "Gestión",
-    
     # COMUNICACIÓN
     "comunicacion": "Comunicación", "comunica": "Comunicación",
     "diseno": "Diseño", "diseño": "Diseño",
     "grafico": "Diseño",
     "difusion": "Difusión", "difucion": "Difusión",
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo",
-    
     # INVESTIGACIÓN
     "investigacion": "Investigación", "investigasion": "Investigación"
 }
 
 def normalizar_comparacion(texto):
-    # Permite convertir cualquier cosa a string seguro
     if pd.isna(texto): return ""
     texto = str(texto).lower().strip()
     if texto in ["nan", "none", ""]: return ""
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def limpiar_textos(texto_sucio):
-    # Convierte a string primero para manejar numeros pegados
     if pd.isna(texto_sucio): return ""
     texto_str = str(texto_sucio).strip()
     if texto_str in ["", "nan", "None", "NaN"]: return ""
-    
     palabras = [p.strip() for p in texto_str.split(',')]
     palabras_corregidas = []
     for p in palabras:
@@ -96,7 +90,6 @@ def limpiar_textos(texto_sucio):
 # ==========================================
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
-
 SUBCATEGORIAS_SUGERIDAS = [
     "Administración", "Financiamiento", "Vinculación", 
     "Memoria/archivo CEDRAM", "Memoria/archivo PAP", "Diseño", "Difusión", 
@@ -127,7 +120,7 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
         y=alt.Y(y_col, title=titulo_y),
         tooltip=[x_col, y_col]
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, theme="streamlit") # Fix use_container_width warning implicit
 
 # --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
@@ -135,6 +128,15 @@ if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_cr
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = None
 if "last_selected_project" not in st.session_state: st.session_state.last_selected_project = None
 if "stats_download" not in st.session_state: st.session_state.stats_download = {}
+
+# --- CALLBACK PARA GUARDADO INSTANTÁNEO ---
+def callback_guardar_estado():
+    # Esta función se ejecuta ANTES de que Streamlit recargue la página.
+    # Salva lo que hay en el editor (key dinámica) al buffer permanente.
+    key_actual = st.session_state.get("key_editor_actual")
+    if key_actual and key_actual in st.session_state:
+        # Convertimos a string inmediatamente para evitar conflictos de tipo
+        st.session_state.df_buffer_masivo = st.session_state[key_actual].astype(str)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -184,17 +186,16 @@ with tab1:
                     time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (MEMORIA PASIVA)
+# PESTAÑA 2: CARGA MASIVA (CALLBACK FIX)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Estabilidad Total:** Puedes copiar y pegar tablas de Excel (incluso con números) sin que se borren.")
+    st.info("💡 **Estabilidad Total:** Puedes copiar y pegar tablas de Excel sin problemas de formato.")
     
     df_p = load_data("Proyectos")
     if df_p.empty: st.warning("Cargando...")
     elif "Nombre del Proyecto" in df_p.columns:
         
-        # --- AUTO-SELECCIÓN ---
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         idx_defecto = 0
         if st.session_state.proy_recien_creado in lista_proy:
@@ -214,43 +215,38 @@ with tab2:
                 exist = df_e[df_e["Proyecto_Padre"] == proy_sel]
             
             if not exist.empty:
-                # Cargamos lo que hay y lo convertimos a string para empezar limpios
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(
                     columns={"Entregable": "Nombre_Entregable", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"}
                 )
             else:
                 temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"])
             
-            # Guardamos en buffer como string para asegurar compatibilidad inicial
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
-        # --- EDITOR PASIVO (No interfiere con el formato al pegar) ---
-        # Usamos una key dinámica basada en el proyecto para que se resetee solo si cambias de proyecto
-        edited_df = st.data_editor(
+        # Key dinámica para que el editor se renueve si cambia el proyecto
+        key_editor = f"editor_dinamico_{proy_sel}"
+        st.session_state.key_editor_actual = key_editor
+
+        # --- EDITOR CON CALLBACK ---
+        st.data_editor(
             st.session_state.df_buffer_masivo, 
             num_rows="dynamic", 
-            key=f"editor_{proy_sel}", 
-            use_container_width=True,
+            key=key_editor,
+            on_change=callback_guardar_estado, # <--- ESTO EVITA EL PARPADEO Y BORRADO
+            use_container_width=True, # Corregido warning
             column_config={
-                # No forzamos validación regex aquí para permitir que el pegado fluya
                 "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                 "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
                 "Contenido": st.column_config.TextColumn("Contenido", width="large"),
                 "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
             }
         )
-        
-        # --- ACTUALIZACIÓN DE MEMORIA (Sin procesar) ---
-        # Simplemente guardamos lo que el usuario está haciendo, sea lo que sea.
-        st.session_state.df_buffer_masivo = edited_df
 
         if st.button("🚀 Guardar Cambios"):
-            # AQUÍ es donde ocurre la magia de la limpieza.
-            # 1. Convertimos todo lo que haya en la tabla a String (por si pegaron números)
-            df_final_process = edited_df.astype(str).replace({"nan": "", "None": "", "NaN": ""})
+            # Leemos del buffer que ya fue actualizado por el callback
+            df_final_process = st.session_state.df_buffer_masivo.astype(str).replace({"nan": "", "None": "", "NaN": ""})
             
-            # 2. Filtramos filas vacías
             validos = df_final_process[
                 (df_final_process["Nombre_Entregable"].str.strip() != "") & 
                 (df_final_process["Nombre_Entregable"] != "")
@@ -259,9 +255,7 @@ with tab2:
             if validos.empty: st.error("La tabla está vacía.")
             else:
                 try:
-                    # 3. Aplicamos el diccionario corrector
                     validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
-                    
                     df_m = load_data("Entregables")
                     if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
                     
@@ -281,7 +275,7 @@ with tab2:
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
                     st.success("¡Actualizado con éxito!")
                     time.sleep(1)
-                    st.session_state.last_selected_project = None # Fuerza recarga limpia
+                    st.session_state.last_selected_project = None 
                     st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
@@ -409,8 +403,8 @@ with tab4:
                     )
                     bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
                     text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text=alt.Text('Total:Q'))
-                    chart = alt.layer(bars, text).properties(width=100, height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
-                    st.altair_chart(chart)
+                    chart = alt.layer(bars, text).properties(width='container', height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
+                    st.altair_chart(chart, use_container_width=True)
             
             st.markdown("---")
             k1, k2 = st.columns(2)
