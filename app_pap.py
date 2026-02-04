@@ -184,7 +184,8 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas", "5. 📥 Descargas", "6. Glosario"])
+# MODIFICADO: SE AGREGÓ "7. Contadores" A LAS PESTAÑAS
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas", "5. 📥 Descargas", "6. Glosario", "7. 🧮 Contadores"])
 
 # ==========================================
 # PESTAÑA 1: REGISTRO
@@ -234,14 +235,10 @@ with tab2:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         
         # --- LÓGICA DE AUTO-SELECCIÓN CORREGIDA ---
-        # Si existe un proyecto recién creado, forzamos al widget a tomar ese valor
         if st.session_state.proy_recien_creado:
-            # Si por lag de la API de Google Sheets el proyecto aún no está en la lista cargada, lo agregamos visualmente
             if st.session_state.proy_recien_creado not in lista_proy:
                 lista_proy.append(st.session_state.proy_recien_creado)
                 lista_proy.sort()
-            
-            # MAGIA: Forzamos la llave del widget en session_state antes de crear el widget
             st.session_state["selector_masivo"] = st.session_state.proy_recien_creado
 
         proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, key="selector_masivo")
@@ -252,24 +249,20 @@ with tab2:
         
         st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
-        # Detectamos si es el nuevo para forzar la tabla vacía
         es_nuevo = (proy_sel == st.session_state.proy_recien_creado)
 
         if st.session_state.last_selected_project != proy_sel or es_nuevo:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             
-            # Si es nuevo, forzamos tabla vacía IGNORANDO si hay datos previos (que no debería)
             if not exist.empty and not es_nuevo:
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                # Generamos las filas vacías
                 temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías"])
             
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
             
-            # Una vez cargado el nuevo, limpiamos la variable para que el usuario pueda cambiar de proyecto libremente después
             if es_nuevo:
                 st.session_state.proy_recien_creado = None 
 
@@ -608,3 +601,74 @@ with tab6:
     * **Mantenimiento:** Señalética, mantenimiento y remodelación de espacios.
     * **Productos teatrales:** Vestuario (diseño y realización), Kamishibai.
     """)
+
+# ==========================================
+# PESTAÑA 7: NUEVO TABLERO DE CONTADORES
+# ==========================================
+with tab7:
+    st.header("🧮 Tablero de Control y Contadores")
+    
+    # Cargamos datos frescos
+    df_c_proy = load_data("Proyectos")
+    df_c_entr = load_data("Entregables")
+    
+    if not df_c_proy.empty:
+        # Limpieza inicial
+        if "Categoría" in df_c_proy.columns: 
+            df_c_proy["Categoría"] = df_c_proy["Categoría"].apply(limpiar_textos)
+        if not df_c_entr.empty and "Subcategoría" in df_c_entr.columns: 
+            df_c_entr["Subcategoría"] = df_c_entr["Subcategoría"].apply(limpiar_textos)
+
+        st.markdown("### 🔎 Filtros Globales")
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        
+        # Filtros idénticos a gráficas
+        f_years = fc1.multiselect("Año", sorted(df_c_proy["Año"].unique()), key="c_y")
+        f_period = fc2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="c_p")
+        f_categ = fc3.multiselect("Categoría", CATEGORIAS_LISTA, key="c_c")
+        f_subcat = fc4.multiselect("Subcategoría", sorted(SUBCATEGORIAS_SUGERIDAS), key="c_s")
+        
+        st.markdown("---")
+
+        # 1. Filtramos Proyectos base (Año, Periodo, Categoría)
+        df_filtered_proy = df_c_proy.copy()
+        if f_years: 
+            df_filtered_proy = df_filtered_proy[df_filtered_proy["Año"].isin(f_years)]
+        if f_period: 
+            df_filtered_proy = df_filtered_proy[df_filtered_proy["Periodo"].astype(str).str.strip().isin(f_period)]
+        if f_categ: 
+            df_filtered_proy = df_filtered_proy[df_filtered_proy["Categoría"].apply(lambda x: any(c in str(x) for c in f_categ))]
+            
+        # Obtenemos los proyectos resultantes de este primer filtro
+        proyectos_visibles = df_filtered_proy["Nombre del Proyecto"].unique()
+
+        # 2. Filtramos Entregables base (que pertenezcan a los proyectos visibles)
+        df_filtered_entr = pd.DataFrame()
+        if not df_c_entr.empty:
+            df_filtered_entr = df_c_entr[df_c_entr["Proyecto_Padre"].isin(proyectos_visibles)]
+
+        # 3. Filtro cruzado por Subcategoría (si aplica)
+        # Si seleccionan Subcategoría, debemos restringir tanto entregables como proyectos
+        if f_subcat and not df_filtered_entr.empty:
+            # Filtramos los entregables que cumplen con la subcategoría
+            df_filtered_entr = df_filtered_entr[df_filtered_entr["Subcategoría"].apply(lambda x: any(s in str(x) for s in f_subcat))]
+            
+            # Ahora, actualizamos la lista de proyectos para que SOLO muestre los que tienen esos entregables
+            proyectos_con_subcat = df_filtered_entr["Proyecto_Padre"].unique()
+            df_filtered_proy = df_filtered_proy[df_filtered_proy["Nombre del Proyecto"].isin(proyectos_con_subcat)]
+
+        # --- CÁLCULO DE TOTALES ---
+        total_proyectos = len(df_filtered_proy)
+        total_entregables = len(df_filtered_entr)
+        
+        # Mostramos Metricas Grandes
+        m1, m2 = st.columns(2)
+        m1.metric("📁 Total Proyectos", total_proyectos, border=True)
+        m2.metric("📄 Total Entregables", total_entregables, border=True)
+        
+        # Opcional: Mostrar detalle si se desea
+        if total_proyectos > 0:
+            with st.expander("Ver lista de proyectos filtrados"):
+                st.dataframe(df_filtered_proy[["Año", "Periodo", "Nombre del Proyecto", "Categoría"]], use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay datos cargados.")
