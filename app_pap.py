@@ -120,7 +120,6 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
         y=alt.Y(y_col, title=titulo_y),
         tooltip=[x_col, y_col]
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
-    # CORRECCIÓN: Volvemos a use_container_width=True para gráficas por compatibilidad
     st.altair_chart(chart, theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
@@ -275,10 +274,12 @@ with tab2:
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: BÚSQUEDA Y EDICIÓN
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (MODO BÚNKER APLICADO)
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
+    st.info("💡 **Tip:** Las tablas ahora están protegidas. Puedes editar libremente y los cambios SOLO se guardarán al presionar el botón al final de cada tabla.")
+    
     df_proy = load_data("Proyectos"); df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
@@ -308,26 +309,40 @@ with tab3:
             df_v = df_v[df_v["Nombre del Proyecto"].isin(df_ev["Proyecto_Padre"].unique())]
 
         st.markdown("---")
+        
+        # --- TABLA DE PROYECTOS EN FORMULARIO (BÚNKER) ---
         with st.expander(f"📂 1. Tabla de Proyectos ({len(df_v)})", expanded=True):
-            ed_p = st.data_editor(df_v, width="stretch", key="ep", num_rows="fixed", column_config={
-                "Categoría": st.column_config.TextColumn("Categoría(s)"),
-                "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
-                "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
-            })
-            if st.button("💾 Actualizar Proyectos"):
+            with st.form(key="form_edicion_proyectos"):
+                ed_p = st.data_editor(df_v, width="stretch", key="ep", num_rows="fixed", column_config={
+                    "Categoría": st.column_config.TextColumn("Categoría(s)"),
+                    "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
+                    "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
+                })
+                
+                # El botón está dentro del form, evita recargas hasta hacer clic
+                btn_update_proy = st.form_submit_button("💾 Guardar Cambios en Proyectos")
+            
+            if btn_update_proy:
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
                 df_master_proy = load_data("Proyectos"); df_master_proy.update(ed_p); save_data(df_master_proy, "Proyectos")
                 st.success("✅ Actualizado.")
+                time.sleep(1); st.rerun()
 
+        # --- TABLA DE ENTREGABLES EN FORMULARIO (BÚNKER) ---
         with st.expander("📦 2. Entregables Asociados", expanded=True):
             if not df_ent.empty:
                 df_ef = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())] if f_sub else df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
                 if not df_ef.empty:
-                    ed_e = st.data_editor(df_ef, width="stretch", key="ee", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
-                    if st.button("💾 Actualizar Entregables"):
+                    with st.form(key="form_edicion_entregables"):
+                        ed_e = st.data_editor(df_ef, width="stretch", key="ee", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
+                        
+                        btn_update_ent = st.form_submit_button("💾 Guardar Cambios en Entregables")
+                    
+                    if btn_update_ent:
                         if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
                         df_master_ent = load_data("Entregables"); df_master_ent.update(ed_e); save_data(df_master_ent, "Entregables")
                         st.success("✅ Actualizado.")
+                        time.sleep(1); st.rerun()
                 else: st.info("Sin entregables.")
             else: st.info("Vacío.")
 
@@ -393,7 +408,6 @@ with tab4:
                 df_chart = pd.concat([pa, ea])
                 if not df_chart.empty:
                     
-                    # --- GRÁFICA CORREGIDA (AGRUPADA) ---
                     chart_base = alt.Chart(df_chart).encode(
                         x=alt.X('Año:O', title='Año', axis=alt.Axis(labelColor='white', titleColor='white')),
                         y=alt.Y('Total:Q', title='Cantidad', axis=alt.Axis(labelColor='white', titleColor='white', grid=False)),
@@ -404,17 +418,8 @@ with tab4:
                         tooltip=['Año', 'Tipo', 'Total']
                     )
 
-                    # Barras Agrupadas con xOffset
-                    bars = chart_base.mark_bar().encode(
-                        xOffset='Tipo:N'
-                    )
-
-                    # Etiquetas de texto
-                    text = chart_base.mark_text(dy=-10, color='white').encode(
-                        text='Total:Q',
-                        xOffset='Tipo:N'
-                    )
-
+                    bars = chart_base.mark_bar().encode(xOffset='Tipo:N')
+                    text = chart_base.mark_text(dy=-10, color='white').encode(text='Total:Q', xOffset='Tipo:N')
                     final_chart = (bars + text).properties(height=350).configure_view(stroke='transparent')
                     st.altair_chart(final_chart, use_container_width=True)
 
