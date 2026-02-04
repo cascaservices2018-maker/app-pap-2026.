@@ -138,7 +138,8 @@ def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#F
     st.altair_chart(chart.configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
-if "form_seed" not in st.session_state: st.session_state.form_seed = 0
+# Inicialización segura de variables
+if "form_seed" not in st.session_state: st.session_state.form_seed = 0 # Semilla para resetear formulario
 if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = None
 if "last_selected_project" not in st.session_state: st.session_state.last_selected_project = None
@@ -162,12 +163,15 @@ st.markdown("---")
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar/Borrar", "4. 📊 Gráficas y Seguimiento", "5. 📥 Descargas", "6. Glosario"])
 
 # ==========================================
-# PESTAÑA 1: REGISTRO (CON LIMPIEZA AUTOMÁTICA)
+# PESTAÑA 1: REGISTRO (ARREGLADO: LIMPIEZA FORZADA)
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
-    # clear_on_submit=True borra los campos tras guardar
-    with st.form("form_proyecto", clear_on_submit=True):
+    
+    # TRUCO: Usamos una "semilla" (key dinámica) para forzar a Streamlit a redibujar el formulario vacío
+    key_suffix = str(st.session_state.form_seed)
+    
+    with st.form(key=f"form_proyecto_{key_suffix}"):
         c1, c2, c3 = st.columns(3)
         anio = c1.number_input("Año", 2019, 2030, datetime.now().year)
         periodo = c2.selectbox("Periodo", ["Primavera", "Verano", "Otoño"])
@@ -178,21 +182,29 @@ with tab1:
         num_ent = ce.number_input("Estimado Entregables", 1)
         comen = cc.text_area("Comentarios")
         
-        if st.form_submit_button("💾 Guardar Proyecto"):
-            if not nombre: st.error("Falta nombre.")
+        submit = st.form_submit_button("💾 Guardar Proyecto")
+        
+        if submit:
+            if not nombre:
+                st.error("⚠️ Falta el nombre del proyecto.")
             else:
+                # 1. Guardar en Base de Datos
                 df = load_data("Proyectos")
                 nuevo = {"Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre, "Descripción": desc, "Num_Entregables": num_ent, "Categoría": limpiar_textos(", ".join(cats)), "Comentarios": comen, "Fecha_Registro": datetime.now().strftime("%Y-%m-%d")}
                 save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
-                st.success("Guardado")
                 
-                # Guardamos el nombre en sesión para seleccionarlo automáticamente en la Tab 2
+                # 2. Guardar estado para la Pestaña 2
                 st.session_state.proy_recien_creado = nombre
                 
-                time.sleep(1); st.rerun()
+                # 3. Forzar limpieza del formulario incrementando la semilla
+                st.session_state.form_seed += 1
+                
+                st.success("✅ Proyecto guardado. Ve a la pestaña 'Carga Masiva' para agregar entregables.")
+                time.sleep(1)
+                st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (AUTO-SELECCIÓN + TABLA VACÍA)
+# PESTAÑA 2: CARGA MASIVA (ARREGLADO: AUTO-SELECCIÓN)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -202,14 +214,23 @@ with tab2:
     if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         
-        # LÓGICA DE AUTO-SELECCIÓN: Si acabas de crear uno, lo selecciona por defecto
-        idx = 0
+        # --- LÓGICA DE AUTO-SELECCIÓN CORREGIDA ---
+        # Buscamos el índice del proyecto recién creado
+        idx_seleccionado = 0
         if st.session_state.proy_recien_creado in lista_proy:
-            idx = lista_proy.index(st.session_state.proy_recien_creado)
-            
-        proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, index=idx, key="sm")
+            idx_seleccionado = lista_proy.index(st.session_state.proy_recien_creado)
+            # Limpiamos la variable para que no interfiera después
+            # (Opcional, pero bueno si quieres que solo pase una vez)
         
-        cat = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0].get("Categoría", "General")
+        proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, index=idx_seleccionado, key="selector_masivo")
+        
+        # Recuperamos info del proyecto para llenar defaults
+        info_proy = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
+        cat = info_proy.get("Categoría", "General")
+        # Recuperamos el número estimado de entregables
+        num_estimado = int(info_proy.get("Num_Entregables", 5)) if pd.notna(info_proy.get("Num_Entregables")) else 5
+        
+        st.caption(f"Categoría: {cat} | Espacios sugeridos: {num_estimado}")
         
         # Generación de la tabla (Buffer)
         if st.session_state.last_selected_project != proy_sel:
@@ -220,20 +241,19 @@ with tab2:
                 # Si ya tiene datos, los mostramos
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                # Si es NUEVO (o no tiene datos), mostramos tabla vacía para "vaciar" info
-                temp_df = pd.DataFrame("", index=range(10), columns=["Nombre", "Contenido", "Subcategorías"])
+                # Si es NUEVO, creamos tabla vacía con el TAMAÑO ESTIMADO que pusiste en el registro
+                temp_df = pd.DataFrame("", index=range(num_estimado), columns=["Nombre", "Contenido", "Subcategorías"])
             
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
-        with st.form(f"f_{proy_sel}"):
+        with st.form(f"form_masivo_{proy_sel}"):
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo, num_rows="dynamic", use_container_width=True,
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
                     "Contenido": st.column_config.TextColumn("Contenido", width="large")
-                    # SIN COLUMNAS EXTRA (Estatus, Responsable, etc.)
                 }
             )
             if st.form_submit_button("🚀 Guardar Cambios"):
