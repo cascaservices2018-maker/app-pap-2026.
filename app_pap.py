@@ -114,27 +114,45 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS DINÁMICAS ---
+# --- FUNCIÓN DE GRÁFICAS DINÁMICAS CON ETIQUETAS NUMÉRICAS ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos para graficar.")
         return
 
+    # Base de datos común
+    base = alt.Chart(df).encode(
+        tooltip=[x_col, y_col]
+    )
+
     if tipo_grafica == "Barras":
-        chart = alt.Chart(df).mark_bar(color=color_base, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
+        # Barras con texto encima
+        bars = base.mark_bar(color=color_base, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
             x=alt.X(x_col, title=None, sort='-y', axis=alt.Axis(labelColor='white', labelAngle=-45)),
-            y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444')),
-            tooltip=[x_col, y_col]
+            y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444'))
         )
+        text = base.mark_text(dy=-10, color='white', fontSize=14, fontWeight='bold').encode(
+            x=alt.X(x_col, sort='-y'),
+            y=alt.Y(y_col),
+            text=alt.Text(y_col) # Muestra el número
+        )
+        chart = bars + text
+
     else:
-        # Configuración para Pastel y Donut
+        # Pastel o Donut con texto en el centro de la sección
         radio_interno = 60 if tipo_grafica == "Donut" else 0
-        chart = alt.Chart(df).mark_arc(innerRadius=radio_interno, outerRadius=120, stroke="#262730", strokeWidth=2).encode(
+        pie = base.mark_arc(innerRadius=radio_interno, outerRadius=120, stroke="#262730", strokeWidth=2).encode(
             theta=alt.Theta(field=y_col, type="quantitative"),
             color=alt.Color(field=x_col, type="nominal", legend=alt.Legend(title=titulo, labelColor='white', titleColor='white')),
-            order=alt.Order(field=y_col, sort="descending"),
-            tooltip=[x_col, y_col]
+            order=alt.Order(field=y_col, sort="descending")
         )
+        text = base.mark_text(radius=140, fill="white", fontSize=14, fontWeight='bold').encode(
+            theta=alt.Theta(field=y_col, type="quantitative", stack=True),
+            order=alt.Order(field=y_col, sort="descending"),
+            text=alt.Text(y_col), # Muestra el número
+            color=alt.value("white") 
+        )
+        chart = pie + text
     
     st.altair_chart(chart.properties(height=350).configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
@@ -368,7 +386,7 @@ with tab3:
             else: st.info("Sin datos.")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (SELECTOR DE TIPO)
+# PESTAÑA 4: GRÁFICAS (SELECTOR + ETIQUETAS NUMÉRICAS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -411,14 +429,17 @@ with tab4:
             
             df_chart = pd.concat([pa, ea])
             if not df_chart.empty:
-                evol_chart = alt.Chart(df_chart).encode(
+                base_evol = alt.Chart(df_chart).encode(
                     x=alt.X('Año:O', axis=alt.Axis(title='Año', labelAngle=0, labelColor='white')),
                     y=alt.Y('Total:Q', axis=alt.Axis(title='Cantidad', labelColor='white', gridColor='#444444')),
                     color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FF4B4B', '#FFD700']), legend=alt.Legend(title=None, labelColor='white', orient='top'))
-                ).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(xOffset='Tipo:N').properties(height=350).configure_view(stroke='transparent')
-                st.altair_chart(evol_chart, use_container_width=True)
+                )
+                bars_evol = base_evol.mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(xOffset='Tipo:N')
+                text_evol = base_evol.mark_text(dy=-10, color='white').encode(text=alt.Text('Total:Q'), xOffset='Tipo:N')
+                
+                st.altair_chart((bars_evol + text_evol).properties(height=350).configure_view(stroke='transparent'), use_container_width=True)
 
-            # 2. DISTRIBUCIONES (DINÁMICAS)
+            # 2. DISTRIBUCIONES (DINÁMICAS CON ETIQUETAS)
             st.markdown("---")
             col_a, col_b = st.columns(2)
             with col_a:
