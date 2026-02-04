@@ -55,7 +55,7 @@ DICCIONARIO_CORRECTO = {
     "comunicacion": "Comunicación", "comunica": "Comunicación",
     "diseno": "Diseño", "diseño": "Diseño",
     "grafico": "Diseño",
-    "difusion": "Difusión", "difucion": "Difusión",
+    "difusion": "Difusión", "difucion": "Difusión", "dufusion": "Difusión", # <-- AGREGADO
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo",
     # INVESTIGACIÓN
     "investigacion": "Investigación", "investigasion": "Investigación"
@@ -114,12 +114,13 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF"):
-    chart = alt.Chart(df).mark_bar(color=color_barra).encode(
-        x=alt.X(x_col, title=titulo_x, sort='-y'),
-        y=alt.Y(y_col, title=titulo_y),
+def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FF4B4B"):
+    # Estilización: Barras redondeadas, sin bordes, ejes limpios
+    chart = alt.Chart(df).mark_bar(color=color_barra, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
+        x=alt.X(x_col, title=titulo_x, sort='-y', axis=alt.Axis(labelColor='white', titleColor='white', labelAngle=-45)),
+        y=alt.Y(y_col, title=titulo_y, axis=alt.Axis(labelColor='white', titleColor='white', gridColor='#444444')),
         tooltip=[x_col, y_col]
-    ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
+    ).properties(height=320).configure_view(stroke='transparent') # Elimina el borde blanco del cuadro
     st.altair_chart(chart, theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
@@ -129,7 +130,7 @@ if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo
 if "last_selected_project" not in st.session_state: st.session_state.last_selected_project = None
 if "stats_download" not in st.session_state: st.session_state.stats_download = {}
 
-# VARIABLES DE ESTADO PARA PESTAÑA 3 (ESTABILIDAD)
+# VARIABLES DE ESTADO PARA PESTAÑA 3
 if "p3_buffer_proy" not in st.session_state: st.session_state.p3_buffer_proy = None
 if "p3_buffer_ent" not in st.session_state: st.session_state.p3_buffer_ent = None
 if "p3_filter_hash" not in st.session_state: st.session_state.p3_filter_hash = ""
@@ -266,7 +267,7 @@ with tab2:
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (BÚNKER + CASCADA)
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
@@ -283,7 +284,6 @@ with tab3:
         if not df_ent.empty: 
             for s in df_ent["Subcategoría"].dropna(): subs_f.update([limpiar_textos(x) for x in str(s).split(',')])
 
-        # --- FILTROS EN CASCADA ---
         c0, c1, c2, c3, c4 = st.columns(5)
         with c1: f_ano = st.multiselect("Año:", sorted(df_proy["Año"].unique()), key="f_p3_ano")
         
@@ -295,7 +295,6 @@ with tab3:
         with c3: f_cat = st.multiselect("Categoría:", sorted(list(cats_f)), key="f_p3_cat")
         with c4: f_sub = st.multiselect("Subcategoría:", sorted(list(subs_f)), key="f_p3_sub")
 
-        # Calculamos la vista filtrada
         df_v = df_proy.copy(); df_ev = df_ent.copy() if not df_ent.empty else pd.DataFrame()
 
         if f_ano: df_v = df_v[df_v["Año"].isin(f_ano)]
@@ -307,14 +306,11 @@ with tab3:
             df_ev = df_ev[df_ev["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))]
             df_v = df_v[df_v["Nombre del Proyecto"].isin(df_ev["Proyecto_Padre"].unique())]
 
-        # --- GESTIÓN DE MEMORIA (BÚNKER) ---
-        # Creamos una firma única de los filtros actuales
+        # --- MEMORIA BÚNKER ---
         filter_hash = f"{f_ano}{f_nom}{f_per}{f_cat}{f_sub}"
         
-        # Si cambiaron los filtros, recargamos la memoria desde la BD
         if st.session_state.p3_filter_hash != filter_hash or st.session_state.p3_buffer_proy is None:
             st.session_state.p3_buffer_proy = df_v.copy()
-            # Filtramos entregables para el buffer
             if not df_ent.empty:
                 if f_sub: df_ent_filtered = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
                 else: df_ent_filtered = df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
@@ -325,11 +321,9 @@ with tab3:
             st.session_state.p3_filter_hash = filter_hash
 
         st.markdown("---")
-        
-        # 1. TABLA PROYECTOS (BÚNKER)
         with st.expander(f"📂 1. Tabla de Proyectos ({len(st.session_state.p3_buffer_proy)})", expanded=True):
             ed_p = st.data_editor(
-                st.session_state.p3_buffer_proy, # Usamos MEMORIA, no df_v directo
+                st.session_state.p3_buffer_proy,
                 width="stretch", 
                 key="editor_p3_proy", 
                 num_rows="fixed", 
@@ -341,19 +335,16 @@ with tab3:
             )
             if st.button("💾 Actualizar Proyectos"):
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
-                # Actualizamos maestra
                 df_master_proy = load_data("Proyectos")
                 df_master_proy.update(ed_p) 
                 save_data(df_master_proy, "Proyectos")
-                # Actualizamos el buffer local para que no salte
                 st.session_state.p3_buffer_proy = ed_p
                 st.success("✅ Actualizado.")
 
-        # 2. TABLA ENTREGABLES (BÚNKER)
         with st.expander("📦 2. Entregables Asociados", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
                 ed_e = st.data_editor(
-                    st.session_state.p3_buffer_ent, # Usamos MEMORIA
+                    st.session_state.p3_buffer_ent,
                     width="stretch", 
                     key="editor_p3_ent", 
                     num_rows="fixed", 
@@ -379,7 +370,7 @@ with tab3:
     else: st.info("Cargando...")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS
+# PESTAÑA 4: GRÁFICAS (ESTILIZADAS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
@@ -429,14 +420,25 @@ with tab4:
                 
                 df_chart = pd.concat([pa, ea])
                 if not df_chart.empty:
+                    # GRÁFICA ESTILIZADA: Agrupada + Colores + Bordes redondeados
                     base = alt.Chart(df_chart).encode(
-                        x=alt.X('Tipo:N', axis=None),
-                        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FFFFFF', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white"))
+                        x=alt.X('Año:O', axis=alt.Axis(title='Año', labelAngle=0, labelColor='white', titleColor='white')),
+                        y=alt.Y('Total:Q', axis=alt.Axis(title='Cantidad', labelColor='white', titleColor='white', gridColor='#444444')),
+                        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FF4B4B', '#FFD700']), legend=alt.Legend(title="Tipo", labelColor="white", titleColor="white", orient="top"))
                     )
-                    bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
-                    text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text=alt.Text('Total:Q'))
-                    chart = alt.layer(bars, text).properties(width='container', height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
-                    st.altair_chart(chart, width="stretch")
+                    
+                    # Barras agrupadas con offset para ver ambos años claramente
+                    bars = base.mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                        xOffset='Tipo:N'
+                    )
+                    
+                    text = base.mark_text(dy=-10, color='white').encode(
+                        text=alt.Text('Total:Q'),
+                        xOffset='Tipo:N'
+                    )
+                    
+                    chart = (bars + text).properties(height=350).configure_view(stroke='transparent')
+                    st.altair_chart(chart, theme="streamlit", use_container_width=True)
             
             st.markdown("---")
             k1, k2 = st.columns(2)
