@@ -105,49 +105,31 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS (TEXTO OPTIMIZADO) ---
+# --- FUNCIÓN DE GRÁFICAS LIMPIA (SIN NÚMEROS) ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos.")
         return
     
+    # Base común con tooltips (el número se ve al pasar el mouse)
     base = alt.Chart(df).encode(tooltip=[x_col, y_col])
     
     if tipo_grafica == "Barras":
-        # Barras con texto encima
-        bars = base.mark_bar(color=color_base, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+        chart = base.mark_bar(color=color_base, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X(x_col, title=None, sort='-y', axis=alt.Axis(labelColor='white', labelAngle=-45)),
             y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444'))
-        )
-        text = base.mark_text(dy=-15, color='white', fontSize=14, fontWeight='bold').encode(
-            x=alt.X(x_col, sort='-y'), 
-            y=alt.Y(y_col), 
-            text=alt.Text(y_col)
-        )
-        chart = (bars + text).properties(height=350)
+        ).properties(height=350)
 
     else:
-        # Pastel / Donut (Texto Externo Ajustado)
+        # Pastel / Donut
         radio_interno = 70 if tipo_grafica == "Donut" else 0
-        radio_externo = 100 # Reducimos un poco el pastel para dar espacio al texto
+        radio_externo = 120
         
-        pie = base.mark_arc(innerRadius=radio_interno, outerRadius=radio_externo, stroke="#262730").encode(
+        chart = base.mark_arc(innerRadius=radio_interno, outerRadius=radio_externo, stroke="#262730").encode(
             theta=alt.Theta(field=y_col, type="quantitative"),
             color=alt.Color(field=x_col, type="nominal", legend=alt.Legend(title=titulo, labelColor='white', titleColor='white')),
             order=alt.Order(field=y_col, sort="descending")
-        )
-        
-        # Texto posicionado en un radio mayor (fuera del pastel)
-        text = base.mark_text(radius=radio_externo + 20, fill="white", fontWeight='bold', fontSize=14).encode(
-            theta=alt.Theta(field=y_col, stack=True), 
-            text=alt.Text(y_col),
-            order=alt.Order(field=y_col, sort="descending"),
-            # Ocultar si el valor es 0
-            opacity=alt.condition(alt.datum[y_col] > 0, alt.value(1), alt.value(0))
-        )
-        
-        # Aumentamos el contenedor para evitar recortes
-        chart = (pie + text).properties(height=400)
+        ).properties(height=350)
 
     st.altair_chart(chart.configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
@@ -217,10 +199,10 @@ with tab2:
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             if not exist.empty:
                 # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
+                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Estatus", "Responsable", "Observaciones"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
                 # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías"])
+                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías", "Estatus", "Responsable", "Observaciones"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -229,8 +211,12 @@ with tab2:
                 st.session_state.df_buffer_masivo, num_rows="dynamic", use_container_width=True,
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
+                    "Estatus": st.column_config.SelectboxColumn("Estatus", options=ESTATUS_OPCIONES, required=True, default="Pendiente"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
-                    "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                    "Contenido": st.column_config.TextColumn("Contenido", width="large"),
+                    "Responsable": st.column_config.TextColumn("Responsable", width="medium"),
+                    "Observaciones": st.column_config.TextColumn("Observaciones", width="large")
+                    # SE ELIMINÓ LA CONFIGURACIÓN DE PLANTILLAS
                 }
             )
             if st.form_submit_button("🚀 Guardar Cambios"):
@@ -247,7 +233,9 @@ with tab2:
                     nuevos.append({
                         "Proyecto_Padre": proy_sel, "Entregable": r["Nombre"], "Contenido": r["Contenido"],
                         "Categoría": cat, "Subcategoría": r["Subcategorías"], 
-                        "Estatus": "Pendiente", "Responsable": "", "Observaciones": "", # Valores por defecto para mantener consistencia
+                        "Estatus": r["Estatus"] if r["Estatus"] else "Pendiente",
+                        "Responsable": r["Responsable"], "Observaciones": r["Observaciones"],
+                        # SE ELIMINÓ EL CAMPO 'Plantillas' AQUÍ
                         "Fecha_Registro": hoy
                     })
                 save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
@@ -367,7 +355,7 @@ with tab4:
             df_ch = pd.concat([pa, ea])
             if not df_ch.empty:
                 base = alt.Chart(df_ch).encode(x=alt.X('Año:O', axis=alt.Axis(labelColor='white')), y=alt.Y('Total:Q', axis=alt.Axis(labelColor='white')), color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FF4B4B', '#FFD700'])))
-                chart = (base.mark_bar().encode(xOffset='Tipo:N') + base.mark_text(dy=-10, color='white').encode(text='Total:Q', xOffset='Tipo:N')).properties(height=350)
+                chart = base.mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(xOffset='Tipo:N').properties(height=350)
                 st.altair_chart(chart, use_container_width=True)
 
             st.markdown("---")
