@@ -129,6 +129,11 @@ if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo
 if "last_selected_project" not in st.session_state: st.session_state.last_selected_project = None
 if "stats_download" not in st.session_state: st.session_state.stats_download = {}
 
+# VARIABLES DE ESTADO PARA PESTAÑA 3 (ESTABILIDAD)
+if "p3_buffer_proy" not in st.session_state: st.session_state.p3_buffer_proy = None
+if "p3_buffer_ent" not in st.session_state: st.session_state.p3_buffer_ent = None
+if "p3_filter_hash" not in st.session_state: st.session_state.p3_filter_hash = ""
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.image(LOGO_URL, width=280) 
@@ -177,7 +182,7 @@ with tab1:
                     time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (ESTABLE Y BLINDADA)
+# PESTAÑA 2: CARGA MASIVA (BÚNKER)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -198,7 +203,6 @@ with tab2:
         cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
         st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
-        # --- GESTIÓN DE CARGA ---
         if st.session_state.last_selected_project != proy_sel:
             df_e = load_data("Entregables")
             exist = pd.DataFrame()
@@ -215,12 +219,11 @@ with tab2:
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
-        # --- FORMULARIO DE AISLAMIENTO ---
         with st.form(key=f"form_masivo_{proy_sel}"):
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo, 
                 num_rows="dynamic", 
-                width="stretch", # Sintaxis correcta
+                width="stretch",
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
@@ -230,7 +233,6 @@ with tab2:
             )
             submit_btn = st.form_submit_button("🚀 Guardar Cambios (Definitivo)")
 
-        # --- LÓGICA DE GUARDADO ---
         if submit_btn:
             df_final_process = edited_df.astype(str).replace({"nan": "", "None": "", "NaN": ""})
             validos = df_final_process[
@@ -264,17 +266,18 @@ with tab2:
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (FILTROS EN CASCADA)
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (BÚNKER + CASCADA)
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
+    st.info("💡 **Edición Segura:** Filtra primero. Luego edita todo lo que quieras. Pulsa 'Guardar' para confirmar.")
+    
     df_proy = load_data("Proyectos"); df_ent = load_data("Entregables")
 
     if not df_proy.empty and "Año" in df_proy.columns:
         if "Categoría" in df_proy.columns: df_proy["Categoría"] = df_proy["Categoría"].apply(limpiar_textos)
         if not df_ent.empty: df_ent["Subcategoría"] = df_ent["Subcategoría"].apply(limpiar_textos)
 
-        # Filtros de Categorías y Subcategorías (estáticos por ahora)
         cats_f = set(); subs_f = set()
         for c in df_proy["Categoría"].dropna(): cats_f.update([limpiar_textos(x) for x in str(c).split(',')])
         if not df_ent.empty: 
@@ -282,34 +285,19 @@ with tab3:
 
         # --- FILTROS EN CASCADA ---
         c0, c1, c2, c3, c4 = st.columns(5)
+        with c1: f_ano = st.multiselect("Año:", sorted(df_proy["Año"].unique()), key="f_p3_ano")
         
-        # 1. AÑO (Filtro Maestro) -> Ubicado en Columna 2 (c1)
-        with c1:
-            f_ano = st.multiselect("Año:", sorted(df_proy["Año"].unique()), key="f_p3_ano")
+        df_posibles = df_proy.copy()
+        if f_ano: df_posibles = df_proy[df_proy["Año"].isin(f_ano)]
 
-        # LOGICA CASCADA: Si hay año seleccionado, filtramos los proyectos posibles
-        df_proyectos_posibles = df_proy.copy()
-        if f_ano:
-            df_proyectos_posibles = df_proy[df_proy["Año"].isin(f_ano)]
+        with c0: f_nom = st.multiselect("🔍 Proyecto:", sorted(df_posibles["Nombre del Proyecto"].unique()), key="f_p3_nom")
+        with c2: f_per = st.multiselect("Periodo:", ["Primavera", "Verano", "Otoño"], key="f_p3_per")
+        with c3: f_cat = st.multiselect("Categoría:", sorted(list(cats_f)), key="f_p3_cat")
+        with c4: f_sub = st.multiselect("Subcategoría:", sorted(list(subs_f)), key="f_p3_sub")
 
-        # 2. PROYECTO (Depende del Año) -> Ubicado en Columna 1 (c0)
-        with c0:
-            # Las opciones de proyectos solo muestran los que coinciden con el año
-            f_nom = st.multiselect("🔍 Proyecto:", sorted(df_proyectos_posibles["Nombre del Proyecto"].unique()), key="f_p3_nom")
-
-        # 3. PERIODO (Opcional: Podría depender del año también) -> Columna 3
-        with c2:
-            f_per = st.multiselect("Periodo:", ["Primavera", "Verano", "Otoño"], key="f_p3_per")
-        
-        with c3:
-            f_cat = st.multiselect("Categoría:", sorted(list(cats_f)), key="f_p3_cat")
-        with c4:
-            f_sub = st.multiselect("Subcategoría:", sorted(list(subs_f)), key="f_p3_sub")
-
-        # --- APLICACIÓN DE FILTROS A LA TABLA FINAL ---
+        # Calculamos la vista filtrada
         df_v = df_proy.copy(); df_ev = df_ent.copy() if not df_ent.empty else pd.DataFrame()
 
-        # Filtramos por las selecciones finales
         if f_ano: df_v = df_v[df_v["Año"].isin(f_ano)]
         if f_nom: df_v = df_v[df_v["Nombre del Proyecto"].isin(f_nom)]
         if f_per: df_v = df_v[df_v["Periodo"].astype(str).str.strip().isin(f_per)]
@@ -319,29 +307,66 @@ with tab3:
             df_ev = df_ev[df_ev["Subcategoría"].apply(lambda x: any(limpiar_textos(s) in f_sub for s in str(x).split(',')))]
             df_v = df_v[df_v["Nombre del Proyecto"].isin(df_ev["Proyecto_Padre"].unique())]
 
+        # --- GESTIÓN DE MEMORIA (BÚNKER) ---
+        # Creamos una firma única de los filtros actuales
+        filter_hash = f"{f_ano}{f_nom}{f_per}{f_cat}{f_sub}"
+        
+        # Si cambiaron los filtros, recargamos la memoria desde la BD
+        if st.session_state.p3_filter_hash != filter_hash or st.session_state.p3_buffer_proy is None:
+            st.session_state.p3_buffer_proy = df_v.copy()
+            # Filtramos entregables para el buffer
+            if not df_ent.empty:
+                if f_sub: df_ent_filtered = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
+                else: df_ent_filtered = df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
+                st.session_state.p3_buffer_ent = df_ent_filtered.copy()
+            else:
+                st.session_state.p3_buffer_ent = pd.DataFrame()
+            
+            st.session_state.p3_filter_hash = filter_hash
+
         st.markdown("---")
-        with st.expander(f"📂 1. Tabla de Proyectos ({len(df_v)})", expanded=True):
-            ed_p = st.data_editor(df_v, width="stretch", key="ep", num_rows="fixed", column_config={
-                "Categoría": st.column_config.TextColumn("Categoría(s)"),
-                "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
-                "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
-            })
+        
+        # 1. TABLA PROYECTOS (BÚNKER)
+        with st.expander(f"📂 1. Tabla de Proyectos ({len(st.session_state.p3_buffer_proy)})", expanded=True):
+            ed_p = st.data_editor(
+                st.session_state.p3_buffer_proy, # Usamos MEMORIA, no df_v directo
+                width="stretch", 
+                key="editor_p3_proy", 
+                num_rows="fixed", 
+                column_config={
+                    "Categoría": st.column_config.TextColumn("Categoría(s)"),
+                    "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
+                    "Periodo": st.column_config.SelectboxColumn("Periodo", options=["Primavera", "Verano", "Otoño"], required=True)
+                }
+            )
             if st.button("💾 Actualizar Proyectos"):
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
-                df_master_proy = load_data("Proyectos"); df_master_proy.update(ed_p); save_data(df_master_proy, "Proyectos")
+                # Actualizamos maestra
+                df_master_proy = load_data("Proyectos")
+                df_master_proy.update(ed_p) 
+                save_data(df_master_proy, "Proyectos")
+                # Actualizamos el buffer local para que no salte
+                st.session_state.p3_buffer_proy = ed_p
                 st.success("✅ Actualizado.")
 
+        # 2. TABLA ENTREGABLES (BÚNKER)
         with st.expander("📦 2. Entregables Asociados", expanded=True):
-            if not df_ent.empty:
-                df_ef = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())] if f_sub else df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
-                if not df_ef.empty:
-                    ed_e = st.data_editor(df_ef, width="stretch", key="ee", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
-                    if st.button("💾 Actualizar Entregables"):
-                        if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
-                        df_master_ent = load_data("Entregables"); df_master_ent.update(ed_e); save_data(df_master_ent, "Entregables")
-                        st.success("✅ Actualizado.")
-                else: st.info("Sin entregables.")
-            else: st.info("Vacío.")
+            if not st.session_state.p3_buffer_ent.empty:
+                ed_e = st.data_editor(
+                    st.session_state.p3_buffer_ent, # Usamos MEMORIA
+                    width="stretch", 
+                    key="editor_p3_ent", 
+                    num_rows="fixed", 
+                    column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")}
+                )
+                if st.button("💾 Actualizar Entregables"):
+                    if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
+                    df_master_ent = load_data("Entregables")
+                    df_master_ent.update(ed_e)
+                    save_data(df_master_ent, "Entregables")
+                    st.session_state.p3_buffer_ent = ed_e
+                    st.success("✅ Actualizado.")
+            else: st.info("No hay entregables para esta selección.")
 
         with st.expander("🗑️ Zona de Borrado", expanded=False):
             ops = df_v["Nombre del Proyecto"].unique()
