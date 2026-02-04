@@ -16,6 +16,15 @@ st.set_page_config(
 )
 
 # ==========================================
+# 🔗 CONFIGURACIÓN SISTEMA (CONSTANTES)
+# ==========================================
+# MOVIDO AL INICIO PARA EVITAR NameError
+LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
+CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
+SUBCATEGORIAS_SUGERIDAS = ["Administración", "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
+ESTATUS_OPCIONES = ["Completado", "En Proceso", "Pendiente", "Pausado", "Cancelado"]
+
+# ==========================================
 # 🎨 PERSONALIZACIÓN DE COLORES (CSS)
 # ==========================================
 COLOR_FONDO_PRINCIPAL = "#A60000"
@@ -36,7 +45,7 @@ estilos_css = f"""
 st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 DICCIONARIO Y CONSTANTES
+# 📖 DICCIONARIO INTELIGENTE
 # ==========================================
 DICCIONARIO_CORRECTO = {
     "diseno arquitectonico": "Diseño arquitectónico", "diseño arquitectonico": "Diseño arquitectónico",
@@ -50,9 +59,6 @@ DICCIONARIO_CORRECTO = {
     "grafico": "Diseño", "difusion": "Difusión", "dufusion": "Difusión",
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo", "investigacion": "Investigación"
 }
-
-CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
-SUBCATEGORIAS_SUGERIDAS = ["Administración", "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
 
 def normalizar_comparacion(texto):
     if pd.isna(texto): return ""
@@ -87,6 +93,10 @@ def load_data(sheet_name):
             df.columns = df.columns.str.strip() 
             if "Periodo" in df.columns:
                 df["Periodo"] = df["Periodo"].astype(str).str.strip().str.title()
+            # Asegurar nuevas columnas de seguimiento
+            if "Estatus" not in df.columns: df["Estatus"] = "Pendiente"
+            if "Responsable" not in df.columns: df["Responsable"] = ""
+            if "Observaciones" not in df.columns: df["Observaciones"] = ""
         return df
     except: return pd.DataFrame()
 
@@ -96,7 +106,7 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS CON ETIQUETAS ---
+# --- FUNCIÓN DE GRÁFICAS ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos.")
@@ -126,7 +136,7 @@ def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#F
         chart = pie + text
     st.altair_chart(chart.properties(height=350).configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
-# --- ESTADOS ---
+# --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
 if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = None
@@ -192,10 +202,10 @@ with tab2:
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             if not exist.empty:
                 # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
+                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Estatus", "Responsable", "Observaciones"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
                 # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías"])
+                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías", "Estatus", "Responsable", "Observaciones"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -204,8 +214,11 @@ with tab2:
                 st.session_state.df_buffer_masivo, num_rows="dynamic", use_container_width=True,
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
+                    "Estatus": st.column_config.SelectboxColumn("Estatus", options=ESTATUS_OPCIONES, required=True, default="Pendiente"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
-                    "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                    "Contenido": st.column_config.TextColumn("Contenido", width="large"),
+                    "Responsable": st.column_config.TextColumn("Responsable", width="medium"),
+                    "Observaciones": st.column_config.TextColumn("Observaciones", width="large")
                     # SE ELIMINÓ LA CONFIGURACIÓN DE PLANTILLAS
                 }
             )
@@ -223,6 +236,8 @@ with tab2:
                     nuevos.append({
                         "Proyecto_Padre": proy_sel, "Entregable": r["Nombre"], "Contenido": r["Contenido"],
                         "Categoría": cat, "Subcategoría": r["Subcategorías"], 
+                        "Estatus": r["Estatus"] if r["Estatus"] else "Pendiente",
+                        "Responsable": r["Responsable"], "Observaciones": r["Observaciones"],
                         # SE ELIMINÓ EL CAMPO 'Plantillas' AQUÍ
                         "Fecha_Registro": hoy
                     })
@@ -275,11 +290,15 @@ with tab3:
             if st.button("Actualizar Proyectos"):
                 m = load_data("Proyectos"); m.update(ed_p); save_data(m, "Proyectos"); st.success("OK")
 
-        with st.expander("Entregables", expanded=True):
+        with st.expander("Entregables (Seguimiento)", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
                 # FILTRO PARA QUITAR COLUMNA 'Plantillas' DE LA VISTA
                 cols_ok = [c for c in st.session_state.p3_buffer_ent.columns if c not in ["Plantillas", "Plantillas_Usadas"]]
-                ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_ok], use_container_width=True, key="ee3", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
+                ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_ok], use_container_width=True, key="ee3", 
+                    column_config={
+                        "Estatus": st.column_config.SelectboxColumn("Estatus", options=ESTATUS_OPCIONES),
+                        "Subcategoría": st.column_config.TextColumn("Subcategoría")
+                    })
                 if st.button("Actualizar Entregables"):
                     m = load_data("Entregables"); m.update(ed_e); save_data(m, "Entregables"); st.success("OK")
 
@@ -345,7 +364,7 @@ with tab4:
                 graficar_multiformato(d, "Categoría", "Total", "Categoría", tipo_g, "#E0E0E0")
             
             st.markdown("---")
-            st.subheader("📦 Subcategorías")
+            st.subheader("📦 Distribución de Subcategorías")
             if not df_ef.empty:
                 ss = df_ef["Subcategoría"].str.split(',').explode().str.strip(); ss=ss[ss!=""]
                 d = ss.value_counts().reset_index(); d.columns=["Subcategoría","Total"]
