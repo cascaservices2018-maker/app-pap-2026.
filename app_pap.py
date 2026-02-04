@@ -105,7 +105,7 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS CORREGIDA (SIN PROPIEDADES CONFLICTIVAS) ---
+# --- FUNCIÓN DE GRÁFICAS CORREGIDA (ETIQUETAS EXTERNAS) ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos.")
@@ -131,6 +131,8 @@ def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#F
         # Pastel / Donut
         radio_interno = 70 if tipo_grafica == "Donut" else 0
         radio_externo = 120
+        # Radio extra para empujar el texto hacia afuera
+        radio_texto = radio_externo + 30
         
         pie = base.mark_arc(innerRadius=radio_interno, outerRadius=radio_externo, stroke="#262730").encode(
             theta=alt.Theta(field=y_col, type="quantitative"),
@@ -138,17 +140,16 @@ def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#F
             order=alt.Order(field=y_col, sort="descending")
         )
         
-        # Texto dentro de la rebanada (SIN STROKE para evitar errores)
-        text_radius = radio_interno + (radio_externo - radio_interno) / 2 if tipo_grafica == "Donut" else radio_externo / 1.6
-        
-        text = base.mark_text(radius=text_radius, fill="white", fontWeight='bold', fontSize=14).encode(
-            theta=alt.Theta(field=y_col, stack=True), 
+        # Texto FUERA de la rebanada
+        text = base.mark_text(radius=radio_texto, fill="white", fontWeight='bold', fontSize=13).encode(
+            theta=alt.Theta(field=y_col, stack=True), # Posición angular correcta
             text=alt.Text(y_col),
             order=alt.Order(field=y_col, sort="descending"),
             opacity=alt.condition(alt.datum[y_col] > 0, alt.value(1), alt.value(0))
         )
         
-        chart = (pie + text).properties(height=350)
+        # Aumentamos la altura del contenedor para que quepan las etiquetas externas
+        chart = (pie + text).properties(height=420)
 
     st.altair_chart(chart.configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
@@ -363,7 +364,7 @@ with tab4:
             df_ch = pd.concat([pa, ea])
             if not df_ch.empty:
                 base = alt.Chart(df_ch).encode(x=alt.X('Año:O', axis=alt.Axis(labelColor='white')), y=alt.Y('Total:Q', axis=alt.Axis(labelColor='white')), color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Proyectos', 'Entregables'], range=['#FF4B4B', '#FFD700'])))
-                chart = (base.mark_bar().encode(xOffset='Tipo:N') + base.mark_text(dy=-10, color='white').encode(text='Total:Q', xOffset='Tipo:N')).properties(height=350)
+                chart = (base.mark_bar().encode(xOffset='Tipo:N') + base.mark_text(dy=-15, color='white').encode(text='Total:Q', xOffset='Tipo:N')).properties(height=350)
                 st.altair_chart(chart, use_container_width=True)
 
             st.markdown("---")
