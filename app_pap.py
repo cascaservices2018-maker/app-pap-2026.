@@ -93,7 +93,6 @@ def load_data(sheet_name):
             df.columns = df.columns.str.strip() 
             if "Periodo" in df.columns:
                 df["Periodo"] = df["Periodo"].astype(str).str.strip().str.title()
-            # Asegurar columnas nuevas de seguimiento
             if "Estatus" not in df.columns: df["Estatus"] = "Pendiente"
             if "Responsable" not in df.columns: df["Responsable"] = ""
             if "Observaciones" not in df.columns: df["Observaciones"] = ""
@@ -106,57 +105,52 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS CORREGIDA (SOLUCIÓN ENCIMADO) ---
+# --- FUNCIÓN DE GRÁFICAS CORREGIDA (NUMEROS BLANCOS Y GRANDES) ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos.")
         return
     
-    # Base común con tooltips
     base = alt.Chart(df).encode(tooltip=[x_col, y_col])
     
     if tipo_grafica == "Barras":
-        # Barras verticales
+        # Barras
         bars = base.mark_bar(color=color_base, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X(x_col, title=None, sort='-y', axis=alt.Axis(labelColor='white', labelAngle=-45)),
             y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444'))
         )
-        # Texto encima de la barra (con clip=False para que no se corte)
-        text = base.mark_text(dy=-10, color='white', fontSize=12, fontWeight='bold').encode(
+        # Texto Blanco Arriba
+        text = base.mark_text(dy=-15, color='white', fontSize=16, fontWeight='bold').encode(
             x=alt.X(x_col, sort='-y'), 
             y=alt.Y(y_col), 
             text=alt.Text(y_col)
         )
-        # Combinamos y aseguramos que se vea todo
         chart = (bars + text).properties(height=350)
 
     else:
-        # Lógica para Pastel y Donut
-        radio_interno = 60 if tipo_grafica == "Donut" else 0
+        # Pastel / Donut
+        radio_interno = 70 if tipo_grafica == "Donut" else 0
         radio_externo = 120
         
-        # El gráfico circular base
         pie = base.mark_arc(innerRadius=radio_interno, outerRadius=radio_externo, stroke="#262730").encode(
             theta=alt.Theta(field=y_col, type="quantitative"),
-            color=alt.Color(field=x_col, type="nominal", legend=alt.Legend(title=titulo, labelColor='white')),
+            color=alt.Color(field=x_col, type="nominal", legend=alt.Legend(title=titulo, labelColor='white', titleColor='white')),
             order=alt.Order(field=y_col, sort="descending")
         )
         
-        # AJUSTE CLAVE: Posicionar el texto DENTRO de la rebanada para evitar colisiones externas
-        # Usamos un radio menor al externo (ej. 90) para que quede centrado en la banda de color
-        text_radius = radio_interno + (radio_externo - radio_interno) / 2 if tipo_grafica == "Donut" else radio_externo / 1.5
+        # Texto Blanco Dentro de la Rebanada
+        # Calculamos una posición media
+        text_radius = radio_interno + (radio_externo - radio_interno) / 2 if tipo_grafica == "Donut" else radio_externo / 1.6
         
-        text = base.mark_text(radius=text_radius, fill="black", fontWeight='bold', fontSize=11).encode(
+        text = base.mark_text(radius=text_radius, fill="white", fontWeight='900', fontSize=16, stroke='black', strokeWidth=1).encode(
             theta=alt.Theta(field=y_col, stack=True), 
             text=alt.Text(y_col),
             order=alt.Order(field=y_col, sort="descending"),
-            # Truco: Si el valor es 0, no mostrarlo para limpiar
             opacity=alt.condition(alt.datum[y_col] > 0, alt.value(1), alt.value(0))
         )
         
         chart = (pie + text).properties(height=350)
 
-    # Configuración final limpia
     st.altair_chart(chart.configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
@@ -207,7 +201,7 @@ with tab1:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (LIMPIA - SIN PLANTILLAS)
+# PESTAÑA 2: CARGA MASIVA (LIMPIA)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -224,11 +218,10 @@ with tab2:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
             if not exist.empty:
-                # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
+                # SOLO COLUMNAS BÁSICAS
+                temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Estatus", "Responsable", "Observaciones"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                # SE ELIMINÓ 'Plantillas' DE AQUÍ
-                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías"])
+                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías", "Estatus", "Responsable", "Observaciones"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -237,9 +230,11 @@ with tab2:
                 st.session_state.df_buffer_masivo, num_rows="dynamic", use_container_width=True,
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
+                    "Estatus": st.column_config.SelectboxColumn("Estatus", options=ESTATUS_OPCIONES, required=True, default="Pendiente"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
-                    "Contenido": st.column_config.TextColumn("Contenido", width="large")
-                    # SE ELIMINÓ LA CONFIGURACIÓN DE PLANTILLAS
+                    "Contenido": st.column_config.TextColumn("Contenido", width="large"),
+                    "Responsable": st.column_config.TextColumn("Responsable", width="medium"),
+                    "Observaciones": st.column_config.TextColumn("Observaciones", width="large")
                 }
             )
             if st.form_submit_button("🚀 Guardar Cambios"):
@@ -256,7 +251,7 @@ with tab2:
                     nuevos.append({
                         "Proyecto_Padre": proy_sel, "Entregable": r["Nombre"], "Contenido": r["Contenido"],
                         "Categoría": cat, "Subcategoría": r["Subcategorías"], 
-                        # SE ELIMINÓ EL CAMPO 'Plantillas' AQUÍ
+                        "Estatus": r["Estatus"], "Responsable": r["Responsable"], "Observaciones": r["Observaciones"],
                         "Fecha_Registro": hoy
                     })
                 save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
@@ -318,8 +313,9 @@ with tab3:
         with st.expander("Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
                 # FILTRO PARA MOSTRAR SOLO COLUMNAS ESENCIALES (LIMPIO)
-                # Solo muestra: Nombre, Contenido, Subcategoría y Fecha.
+                # Quitamos: Estatus, Responsable, Observaciones, Plantillas
                 cols_limpias = ["Entregable", "Contenido", "Subcategoría", "Fecha_Registro"]
+                # Asegurar que existan
                 cols_final = [c for c in cols_limpias if c in st.session_state.p3_buffer_ent.columns]
                 
                 ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_final], use_container_width=True, key="ee3", 
