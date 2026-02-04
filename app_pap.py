@@ -184,7 +184,6 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-# MODIFICADO: SE AGREGÓ "7. Contadores" A LAS PESTAÑAS
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas", "5. 📥 Descargas", "6. Glosario", "7. 🧮 Contadores"])
 
 # ==========================================
@@ -234,7 +233,7 @@ with tab2:
     if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         
-        # --- LÓGICA DE AUTO-SELECCIÓN CORREGIDA ---
+        # --- LÓGICA DE AUTO-SELECCIÓN ---
         if st.session_state.proy_recien_creado:
             if st.session_state.proy_recien_creado not in lista_proy:
                 lista_proy.append(st.session_state.proy_recien_creado)
@@ -377,8 +376,12 @@ with tab3:
             st.session_state.p3_filter_hash = filter_hash
 
         with st.expander(f"📂 Proyectos ({len(st.session_state.p3_buffer_proy)})", expanded=True):
+            # MODIFICACIÓN: Ocultar columnas Estatus, Responsable, Observaciones en PROYECTOS
+            cols_proy_ocultar = ["Estatus", "Responsable", "Observaciones"]
+            cols_proy_visibles = [c for c in st.session_state.p3_buffer_proy.columns if c not in cols_proy_ocultar]
+
             ed_p = st.data_editor(
-                st.session_state.p3_buffer_proy, 
+                st.session_state.p3_buffer_proy[cols_proy_visibles], 
                 use_container_width=True, 
                 key="ed_p3_p",
                 num_rows="fixed",
@@ -390,11 +393,19 @@ with tab3:
             )
             if st.button("💾 Actualizar Proyectos"):
                 if "Categoría" in ed_p.columns: ed_p["Categoría"] = ed_p["Categoría"].apply(limpiar_textos)
-                df_m = load_data("Proyectos"); df_m.update(ed_p); save_data(df_m, "Proyectos")
-                st.session_state.p3_buffer_proy = ed_p; st.success("✅ Actualizado.")
+                df_m = load_data("Proyectos")
+                df_m.update(ed_p)
+                save_data(df_m, "Proyectos")
+                
+                # Actualizar buffer manteniendo columnas ocultas
+                merged_buffer_p = st.session_state.p3_buffer_proy.copy()
+                merged_buffer_p.update(ed_p)
+                st.session_state.p3_buffer_proy = merged_buffer_p
+                st.success("✅ Actualizado.")
 
         with st.expander("📦 Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
+                # MODIFICACIÓN PREVIA: Ocultar columnas en ENTREGABLES
                 columnas_a_excluir = ["Plantillas", "Responsable", "Estatus", "Observaciones"]
                 cols_visibles = [c for c in st.session_state.p3_buffer_ent.columns if c not in columnas_a_excluir]
                 
@@ -422,23 +433,18 @@ with tab3:
         st.markdown("---")
         st.subheader("🗑️ Zona de Peligro: Borrar Proyecto")
         
-        # Lógica de Deshacer
         if st.session_state.undo_available:
             st.warning("⚠️ Acabas de borrar un proyecto. ¿Fue un error?")
             if st.button("↩️ Deshacer Borrado (Restaurar)"):
-                # Recuperar datos
                 rec_proy = st.session_state.backup_deleted_proy
                 rec_ent = st.session_state.backup_deleted_ent
                 
-                # Cargar actuales
                 curr_proy = load_data("Proyectos")
                 curr_ent = load_data("Entregables")
                 
-                # Concatenar
                 restored_proy = pd.concat([curr_proy, rec_proy], ignore_index=True)
                 restored_ent = pd.concat([curr_ent, rec_ent], ignore_index=True)
                 
-                # Guardar
                 save_data(restored_proy, "Proyectos")
                 save_data(restored_ent, "Entregables")
                 
@@ -459,12 +465,10 @@ with tab3:
                 full_proy = load_data("Proyectos")
                 full_ent = load_data("Entregables")
                 
-                # 1. Guardar copia de seguridad en sesión para Deshacer
                 st.session_state.backup_deleted_proy = full_proy[full_proy["Nombre del Proyecto"] == proy_borrar].copy()
                 st.session_state.backup_deleted_ent = full_ent[full_ent["Proyecto_Padre"] == proy_borrar].copy()
                 st.session_state.undo_available = True
                 
-                # 2. Eliminar
                 new_proy = full_proy[full_proy["Nombre del Proyecto"] != proy_borrar]
                 new_ent = full_ent[full_ent["Proyecto_Padre"] != proy_borrar]
                 
@@ -490,11 +494,9 @@ with tab4:
     df_pg = load_data("Proyectos"); df_eg = load_data("Entregables")
     
     if not df_pg.empty and "Año" in df_pg.columns:
-        # Pre-limpieza
         if "Categoría" in df_pg.columns: df_pg["Categoría"] = df_pg["Categoría"].apply(limpiar_textos)
         if not df_eg.empty: df_eg["Subcategoría"] = df_eg["Subcategoría"].apply(limpiar_textos)
 
-        # Filtros Gráficos
         c1, c2, c3, c4 = st.columns(4)
         yg = c1.multiselect("Año", sorted(df_pg["Año"].unique()), default=sorted(df_pg["Año"].unique()), key="g_y")
         pg = c2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="g_p")
@@ -507,7 +509,6 @@ with tab4:
         if cg: df_f = df_f[df_f["Categoría"].apply(lambda x: any(c in str(x) for c in cg))]
 
         if not df_f.empty:
-            # 1. EVOLUCIÓN ANUAL (SIEMPRE BARRAS AGRUPADAS)
             st.subheader("📅 Evolución Anual")
             pa = df_f["Año"].value_counts().reset_index(); pa.columns=["Año","Total"]; pa["Tipo"]="Proyectos"
             ea = pd.DataFrame()
@@ -531,7 +532,6 @@ with tab4:
                 
                 st.altair_chart((bars_evol + text_evol).properties(height=350).configure_view(stroke='transparent'), use_container_width=True)
 
-            # 2. DISTRIBUCIONES (DINÁMICAS CON ETIQUETAS)
             st.markdown("---")
             col_a, col_b = st.columns(2)
             with col_a:
@@ -608,12 +608,10 @@ with tab6:
 with tab7:
     st.header("🧮 Tablero de Control y Contadores")
     
-    # Cargamos datos frescos
     df_c_proy = load_data("Proyectos")
     df_c_entr = load_data("Entregables")
     
     if not df_c_proy.empty:
-        # Limpieza inicial
         if "Categoría" in df_c_proy.columns: 
             df_c_proy["Categoría"] = df_c_proy["Categoría"].apply(limpiar_textos)
         if not df_c_entr.empty and "Subcategoría" in df_c_entr.columns: 
@@ -622,7 +620,6 @@ with tab7:
         st.markdown("### 🔎 Filtros Globales")
         fc1, fc2, fc3, fc4 = st.columns(4)
         
-        # Filtros idénticos a gráficas
         f_years = fc1.multiselect("Año", sorted(df_c_proy["Año"].unique()), key="c_y")
         f_period = fc2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="c_p")
         f_categ = fc3.multiselect("Categoría", CATEGORIAS_LISTA, key="c_c")
@@ -630,7 +627,6 @@ with tab7:
         
         st.markdown("---")
 
-        # 1. Filtramos Proyectos base (Año, Periodo, Categoría)
         df_filtered_proy = df_c_proy.copy()
         if f_years: 
             df_filtered_proy = df_filtered_proy[df_filtered_proy["Año"].isin(f_years)]
@@ -639,34 +635,24 @@ with tab7:
         if f_categ: 
             df_filtered_proy = df_filtered_proy[df_filtered_proy["Categoría"].apply(lambda x: any(c in str(x) for c in f_categ))]
             
-        # Obtenemos los proyectos resultantes de este primer filtro
         proyectos_visibles = df_filtered_proy["Nombre del Proyecto"].unique()
 
-        # 2. Filtramos Entregables base (que pertenezcan a los proyectos visibles)
         df_filtered_entr = pd.DataFrame()
         if not df_c_entr.empty:
             df_filtered_entr = df_c_entr[df_c_entr["Proyecto_Padre"].isin(proyectos_visibles)]
 
-        # 3. Filtro cruzado por Subcategoría (si aplica)
-        # Si seleccionan Subcategoría, debemos restringir tanto entregables como proyectos
         if f_subcat and not df_filtered_entr.empty:
-            # Filtramos los entregables que cumplen con la subcategoría
             df_filtered_entr = df_filtered_entr[df_filtered_entr["Subcategoría"].apply(lambda x: any(s in str(x) for s in f_subcat))]
-            
-            # Ahora, actualizamos la lista de proyectos para que SOLO muestre los que tienen esos entregables
             proyectos_con_subcat = df_filtered_entr["Proyecto_Padre"].unique()
             df_filtered_proy = df_filtered_proy[df_filtered_proy["Nombre del Proyecto"].isin(proyectos_con_subcat)]
 
-        # --- CÁLCULO DE TOTALES ---
         total_proyectos = len(df_filtered_proy)
         total_entregables = len(df_filtered_entr)
         
-        # Mostramos Metricas Grandes
         m1, m2 = st.columns(2)
         m1.metric("📁 Total Proyectos", total_proyectos, border=True)
         m2.metric("📄 Total Entregables", total_entregables, border=True)
         
-        # Opcional: Mostrar detalle si se desea
         if total_proyectos > 0:
             with st.expander("Ver lista de proyectos filtrados"):
                 st.dataframe(df_filtered_proy[["Año", "Periodo", "Nombre del Proyecto", "Categoría"]], use_container_width=True, hide_index=True)
