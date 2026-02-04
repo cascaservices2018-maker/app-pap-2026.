@@ -120,7 +120,6 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
         y=alt.Y(y_col, title=titulo_y),
         tooltip=[x_col, y_col]
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
-    # CORRECCIÓN 1: width="stretch" en lugar de use_container_width
     st.altair_chart(chart, theme="streamlit", width="stretch")
 
 # --- VARIABLES DE ESTADO ---
@@ -173,7 +172,11 @@ with tab1:
                     nuevo = {"Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre, "Descripción": desc, "Num_Entregables": num_ent, "Categoría": limpiar_textos(", ".join(cats)), "Comentarios": comen, "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                     save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
                     st.success("¡Guardado!")
+                    
+                    # --- AUTO-SELECCIÓN PARA PESTAÑA 2 ---
                     st.session_state.proy_recien_creado = nombre
+                    st.session_state["selector_proyectos_masivo"] = nombre # <--- ESTO FUERZA EL CAMBIO
+                    
                     st.session_state.form_seed += 1
                     time.sleep(1); st.rerun()
 
@@ -189,6 +192,9 @@ with tab2:
     elif "Nombre del Proyecto" in df_p.columns:
 
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
+        
+        # El índice por defecto ya no es tan crítico porque forzamos el session_state arriba, 
+        # pero lo dejamos por si acaso.
         idx_defecto = 0
         if st.session_state.proy_recien_creado in lista_proy:
             idx_defecto = lista_proy.index(st.session_state.proy_recien_creado)
@@ -219,7 +225,6 @@ with tab2:
 
         # --- FORMULARIO DE AISLAMIENTO (st.form) ---
         with st.form(key=f"form_masivo_{proy_sel}"):
-            # CORRECCIÓN 2: Eliminado use_container_width=True, se queda solo width="stretch"
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo,
                 num_rows="dynamic",
@@ -403,7 +408,6 @@ with tab4:
                     bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
                     text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text=alt.Text('Total:Q'))
                     chart = alt.layer(bars, text).properties(width='container', height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
-                    # CORRECCIÓN 3: width="stretch" en lugar de use_container_width
                     st.altair_chart(chart, width="stretch")
 
             st.markdown("---")
