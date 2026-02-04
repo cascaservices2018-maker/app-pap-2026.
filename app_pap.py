@@ -16,34 +16,40 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🔗 CONFIGURACIÓN SISTEMA
+# 🔗 CONFIGURACIÓN SISTEMA (CONSTANTES)
 # ==========================================
 LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/cedramh3-removebg-preview.png?raw=true"
+
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
 SUBCATEGORIAS_SUGERIDAS = ["Administración", "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
 ESTATUS_OPCIONES = ["Completado", "En Proceso", "Pendiente", "Pausado", "Cancelado"]
 
 # ==========================================
-# 🎨 ESTILOS CSS
+# 🎨 PERSONALIZACIÓN DE COLORES (CSS)
 # ==========================================
 COLOR_FONDO_PRINCIPAL = "#A60000"
 COLOR_BARRA_LATERAL = "#262730"
 
-st.markdown(f"""
+estilos_css = f"""
 <style>
     .stApp {{ background-color: {COLOR_FONDO_PRINCIPAL}; }}
     [data-testid="stSidebar"] {{ background-color: {COLOR_BARRA_LATERAL}; }}
     [data-testid="stMetricValue"], h1, h2, h3, p, li {{ color: white !important; }}
     .vega-embed svg text {{ fill: white !important; }}
     .streamlit-expanderHeader {{ background-color: #262730; color: white; }}
+    /* Estilo para los contadores (Métricas) */
     [data-testid="stMetricLabel"] {{ color: #FFD700 !important; font-weight: bold; font-size: 1.1rem; }}
     [data-testid="stMetricValue"] {{ color: white !important; font-size: 3rem !important; font-weight: 700; }}
-    div[data-testid="stButton"] > button:first-child {{ border: 1px solid white; }}
+    /* Botón de borrado */
+    div[data-testid="stButton"] > button:first-child {{
+        border: 1px solid white;
+    }}
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 FUNCIONES DE LIMPIEZA Y DATOS
+# 📖 FUNCIONES GLOBALES (Definidas al inicio para evitar errores)
 # ==========================================
 DICCIONARIO_CORRECTO = {
     "diseno arquitectonico": "Diseño arquitectónico", "diseño arquitectonico": "Diseño arquitectónico",
@@ -58,6 +64,12 @@ DICCIONARIO_CORRECTO = {
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo", "investigacion": "Investigación"
 }
 
+def normalizar_comparacion(texto):
+    if pd.isna(texto): return ""
+    texto = str(texto).lower().strip()
+    if texto in ["nan", "none", ""]: return ""
+    return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+
 def limpiar_textos(texto_sucio):
     if pd.isna(texto_sucio): return ""
     texto_str = str(texto_sucio).strip()
@@ -65,34 +77,65 @@ def limpiar_textos(texto_sucio):
     palabras = [p.strip() for p in texto_str.split(',')]
     palabras_corregidas = []
     for p in palabras:
-        p_norm = ''.join(c for c in unicodedata.normalize('NFD', str(p).lower()) if unicodedata.category(c) != 'Mn')
+        p_norm = normalizar_comparacion(p)
         encontrado = False
-        for k, v in DICCIONARIO_CORRECTO.items():
-            if k in p_norm:
-                palabras_corregidas.append(v); encontrado = True; break
-        if not encontrado: palabras_corregidas.append(p.strip())
+        for error_clave, correccion_perfecta in DICCIONARIO_CORRECTO.items():
+            if error_clave in p_norm: 
+                palabras_corregidas.append(correccion_perfecta)
+                encontrado = True
+                break 
+        if not encontrado:
+            palabras_corregidas.append(p.strip()) 
     return ", ".join(sorted(list(dict.fromkeys(palabras_corregidas))))
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(sheet_name):
     try:
-        # TTL corto para lectura rápida, pero borraremos caché al editar
-        df = conn.read(worksheet=sheet_name, ttl=3)
+        df = conn.read(worksheet=sheet_name, ttl=5)
         if not df.empty: 
-            df.columns = df.columns.str.strip()
-            # Aseguramos columnas críticas
-            cols_req = ["Estatus", "Responsable", "Observaciones", "Num_Entregables"]
-            for c in cols_req:
-                if c not in df.columns: df[c] = ""
+            df.columns = df.columns.str.strip() 
+            if "Periodo" in df.columns:
+                df["Periodo"] = df["Periodo"].astype(str).str.strip().str.title()
+            if "Estatus" not in df.columns: df["Estatus"] = "Pendiente"
+            if "Responsable" not in df.columns: df["Responsable"] = ""
+            if "Observaciones" not in df.columns: df["Observaciones"] = ""
         return df.fillna("")
     except: return pd.DataFrame()
 
 def save_data(df, sheet_name):
     try:
         conn.update(worksheet=sheet_name, data=df)
-        st.cache_data.clear() # CRÍTICO: Limpiar caché inmediatamente al guardar
-    except Exception as e: st.error(f"Error: {e}")
+        st.cache_data.clear()
+    except Exception as e: st.error(f"Error al guardar: {e}")
+
+# --- FUNCIÓN GRÁFICA (Definida aquí para que Tab 4 la encuentre) ---
+def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
+    if df.empty:
+        st.caption("Sin datos.")
+        return
+    
+    # Base común con tooltips
+    base = alt.Chart(df).encode(tooltip=[x_col, y_col])
+    
+    if tipo_grafica == "Barras":
+        chart = base.mark_bar(color=color_base, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+            x=alt.X(x_col, title=None, sort='-y', axis=alt.Axis(labelColor='white', labelAngle=-45)),
+            y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444'))
+        ).properties(height=350)
+
+    else:
+        # Pastel / Donut
+        radio_interno = 70 if tipo_grafica == "Donut" else 0
+        radio_externo = 120
+        
+        chart = base.mark_arc(innerRadius=radio_interno, outerRadius=radio_externo, stroke="#262730").encode(
+            theta=alt.Theta(field=y_col, type="quantitative"),
+            color=alt.Color(field=x_col, type="nominal", legend=alt.Legend(title=titulo, labelColor='white', titleColor='white')),
+            order=alt.Order(field=y_col, sort="descending")
+        ).properties(height=350)
+
+    st.altair_chart(chart.configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
@@ -102,6 +145,7 @@ if "last_selected_project" not in st.session_state: st.session_state.last_select
 if "p3_buffer_proy" not in st.session_state: st.session_state.p3_buffer_proy = None
 if "p3_buffer_ent" not in st.session_state: st.session_state.p3_buffer_ent = None
 if "p3_filter_hash" not in st.session_state: st.session_state.p3_filter_hash = ""
+if "stats_download" not in st.session_state: st.session_state.stats_download = {}
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -115,16 +159,15 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar/Borrar", "4. 📊 Gráficas", "5. 📥 Descargas", "6. Glosario"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar/Borrar", "4. 📊 Gráficas y Seguimiento", "5. 📥 Descargas", "6. Glosario"])
 
 # ==========================================
-# PESTAÑA 1: REGISTRO (SIN BORRAR EL DATO ANTES DE TIEMPO)
+# PESTAÑA 1: REGISTRO (CON LIMPIEZA AUTOMÁTICA)
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
-    # Usamos una key dinámica para limpiar el formulario SOLO al tener éxito
-    key_form = f"form_{st.session_state.form_seed}"
-    
+    # key dinámica para forzar borrado al guardar
+    key_form = f"form_proyecto_{st.session_state.form_seed}"
     with st.form(key_form):
         c1, c2, c3 = st.columns(3)
         anio = c1.number_input("Año", 2019, 2030, datetime.now().year)
@@ -133,7 +176,7 @@ with tab1:
         nombre = st.text_input("Nombre del Proyecto")
         desc = st.text_area("Descripción")
         ce, cc = st.columns(2)
-        # ESTE NÚMERO ES CLAVE PARA LA TABLA DE CARGA MASIVA
+        # ESTE DATO DEFINE EL TAMAÑO DE LA TABLA EN LA PESTAÑA 2
         num_ent = ce.number_input("Estimado Entregables (Filas a crear)", 1, 50, 5)
         comen = cc.text_area("Comentarios")
         
@@ -141,75 +184,56 @@ with tab1:
             if not nombre: st.error("Falta nombre.")
             else:
                 df = load_data("Proyectos")
-                # Verificar duplicados
-                if not df.empty and nombre in df["Nombre del Proyecto"].values:
-                    st.warning("Ese proyecto ya existe.")
-                else:
-                    nuevo = {
-                        "Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre, 
-                        "Descripción": desc, "Num_Entregables": num_ent, # Guardamos el número
-                        "Categoría": limpiar_textos(", ".join(cats)), 
-                        "Comentarios": comen, "Fecha_Registro": datetime.now().strftime("%Y-%m-%d")
-                    }
-                    save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
-                    
-                    # 1. Guardamos el nombre para que la Pestaña 2 lo detecte
-                    st.session_state.proy_recien_creado = nombre
-                    # 2. Reseteamos formulario para el siguiente
-                    st.session_state.form_seed += 1
-                    
-                    st.success(f"Proyecto '{nombre}' creado. Ve a 'Carga Masiva' para llenar sus {num_ent} entregables.")
-                    time.sleep(1)
-                    st.rerun()
+                nuevo = {"Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre, "Descripción": desc, "Num_Entregables": num_ent, "Categoría": limpiar_textos(", ".join(cats)), "Comentarios": comen, "Fecha_Registro": datetime.now().strftime("%Y-%m-%d")}
+                save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
+                
+                # 1. Guardar nombre para Pestaña 2
+                st.session_state.proy_recien_creado = nombre
+                # 2. Resetear formulario
+                st.session_state.form_seed += 1
+                
+                st.success(f"Guardado. Pestaña 'Carga Masiva' lista para '{nombre}'.")
+                time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (AUTO-SELECCIÓN Y TABLA DINÁMICA)
+# PESTAÑA 2: CARGA MASIVA (AUTO-SELECCIÓN + TABLA DINÁMICA)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
+    st.info("💡 **Modo Búnker:** La tabla NO se actualizará hasta que presiones 'Guardar Cambios'.")
     df_p = load_data("Proyectos")
     
     if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         
-        # --- LÓGICA DE AUTO-SELECCIÓN CORREGIDA ---
+        # AUTO-SELECCIÓN
         idx_sel = 0
-        # Si acabamos de crear uno, lo buscamos en la lista ordenada
         if st.session_state.proy_recien_creado in lista_proy:
             idx_sel = lista_proy.index(st.session_state.proy_recien_creado)
         
         proy_sel = st.selectbox("Selecciona Proyecto:", lista_proy, index=idx_sel, key="selector_masivo")
         
-        # Recuperamos datos del proyecto seleccionado
+        # Recuperar datos para tamaño de tabla
         info_p = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0]
         cat = info_p.get("Categoría", "General")
-        
-        # --- LÓGICA PARA CREAR LA TABLA CON EL TAMAÑO CORRECTO ---
-        # Leemos cuántos entregables definió el usuario en la Pestaña 1
         try:
             num_filas = int(info_p.get("Num_Entregables", 5))
-        except:
-            num_filas = 5 # Default si falla
-            
-        st.caption(f"Categoría: {cat} | Espacios configurados: {num_filas}")
+        except: num_filas = 5
         
-        # Gestión del Buffer (Tabla temporal)
+        st.caption(f"Categoría: {cat} | Filas generadas: {num_filas}")
+        
         if st.session_state.last_selected_project != proy_sel:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
-            
             if not exist.empty:
-                # Si ya tiene datos, mostramos lo que hay
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                # SI ES NUEVO: Creamos tabla vacía con el número EXACTO de filas solicitadas
+                # Tabla vacía del tamaño exacto
                 temp_df = pd.DataFrame("", index=range(num_filas), columns=["Nombre", "Contenido", "Subcategorías"])
-            
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
         with st.form(f"f_{proy_sel}"):
-            # Editor limpio: Sin estatus, sin responsable
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo, num_rows="dynamic", use_container_width=True,
                 column_config={
@@ -220,11 +244,10 @@ with tab2:
             )
             if st.form_submit_button("🚀 Guardar Entregables"):
                 val = edited_df.astype(str).replace({"nan": "", "None": ""})
-                val = val[val["Nombre"].str.strip() != ""].copy() # Solo guardamos filas con Nombre
+                val = val[val["Nombre"].str.strip() != ""].copy()
                 val["Subcategorías"] = val["Subcategorías"].apply(limpiar_textos)
                 
                 df_m = load_data("Entregables")
-                # Borramos versiones anteriores de este proyecto para sobreescribir limpio
                 if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
                 
                 nuevos = []
@@ -233,23 +256,21 @@ with tab2:
                     nuevos.append({
                         "Proyecto_Padre": proy_sel, "Entregable": r["Nombre"], "Contenido": r["Contenido"],
                         "Categoría": cat, "Subcategoría": r["Subcategorías"], 
-                        "Estatus": "Pendiente", "Responsable": "", "Observaciones": "", # Defaults
+                        "Estatus": "Pendiente", "Responsable": "", "Observaciones": "",
                         "Fecha_Registro": hoy
                     })
                 save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
                 st.session_state.df_buffer_masivo = val
-                st.success("Guardado correctamente.")
-                time.sleep(1); st.rerun()
+                st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 3: EDICIÓN Y BORRADO (CON REFRESH INMEDIATO)
+# PESTAÑA 3: EDICIÓN Y BORRADO (COMPLETO)
 # ==========================================
 with tab3:
     st.header("📝 Edición y Borrado")
     df_p3 = load_data("Proyectos"); df_e3 = load_data("Entregables")
     
     if not df_p3.empty:
-        # Filtros (Cascada)
         if "Categoría" in df_p3.columns: df_p3["Categoría"] = df_p3["Categoría"].apply(limpiar_textos)
         if not df_e3.empty: df_e3["Subcategoría"] = df_e3["Subcategoría"].apply(limpiar_textos)
 
@@ -269,7 +290,8 @@ with tab3:
             subs = set()
             if not df_e3.empty:
                 vis = df_emb["Nombre del Proyecto"].unique()
-                [subs.update([limpiar_textos(x) for x in str(s).split(',')]) for s in df_e3[df_e3["Proyecto_Padre"].isin(vis)]["Subcategoría"].dropna()]
+                ents_vis = df_e3[df_e3["Proyecto_Padre"].isin(vis)]
+                for s in ents_vis["Subcategoría"].dropna(): subs.update([limpiar_textos(x) for x in str(s).split(',')])
             fs = st.multiselect("Subcategoría", sorted(list(subs)), key="f3s")
             if fs and not df_e3.empty:
                 df_emb = df_emb[df_emb["Nombre del Proyecto"].isin(df_e3[df_e3["Subcategoría"].apply(lambda x: any(s in str(x) for s in fs))]["Proyecto_Padre"])]
@@ -292,34 +314,25 @@ with tab3:
             
             with col_der:
                 st.markdown("#### 🗑️ Zona de Peligro")
-                # Selector para borrar proyecto ENTERO
-                # Usamos el buffer actual para que el usuario elija de lo filtrado
-                lista_para_borrar = ["-- Seleccionar --"] + sorted(st.session_state.p3_buffer_proy["Nombre del Proyecto"].unique().tolist())
-                proy_a_borrar = st.selectbox("Eliminar Proyecto Completo:", lista_para_borrar)
+                # Selección de lo que hay en el filtro actual
+                opciones_borrar = ["-- Seleccionar --"] + sorted(st.session_state.p3_buffer_proy["Nombre del Proyecto"].unique().tolist())
+                proy_a_borrar = st.selectbox("Eliminar Proyecto Completo:", opciones_borrar)
                 
                 if proy_a_borrar != "-- Seleccionar --":
-                    st.error(f"⚠️ Estás a punto de borrar '{proy_a_borrar}' y TODOS sus entregables.")
-                    if st.button("🔥 Confirmar Borrado Definitivo", type="primary"):
-                        # BORRADO ROBUSTO CON LIMPIEZA DE CACHÉ
-                        
-                        # 1. Borrar de Proyectos
+                    st.error(f"⚠️ ¿Borrar '{proy_a_borrar}' y sus archivos?")
+                    if st.button("🔥 Confirmar Borrado", type="primary"):
                         df_master_p = load_data("Proyectos")
                         df_master_p = df_master_p[df_master_p["Nombre del Proyecto"] != proy_a_borrar]
-                        conn.update(worksheet="Proyectos", data=df_master_p) # Guardado directo sin cache aun
+                        conn.update(worksheet="Proyectos", data=df_master_p) # Guardado directo
                         
-                        # 2. Borrar de Entregables
                         df_master_e = load_data("Entregables")
                         if not df_master_e.empty:
                             df_master_e = df_master_e[df_master_e["Proyecto_Padre"] != proy_a_borrar]
                             conn.update(worksheet="Entregables", data=df_master_e)
                         
-                        # 3. LIMPIEZA CRÍTICA PARA QUE SE VEA EL CAMBIO
-                        st.cache_data.clear()
-                        st.session_state.p3_buffer_proy = None # Reset buffer visual
-                        
-                        st.success(f"Proyecto eliminado.")
-                        time.sleep(1)
-                        st.rerun()
+                        st.cache_data.clear() # Limpieza forzosa
+                        st.session_state.p3_buffer_proy = None # Reset visual
+                        st.success(f"Eliminado."); time.sleep(1); st.rerun()
 
         with st.expander("Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
@@ -334,11 +347,11 @@ with tab3:
                     proyectos_afectados = st.session_state.p3_buffer_ent["Proyecto_Padre"].unique()
                     df_master = df_master[~df_master["Proyecto_Padre"].isin(proyectos_afectados)]
                     m = load_data("Entregables"); m.update(ed_e); save_data(m, "Entregables")
-                    st.success("Cambios guardados.")
+                    st.success("Guardado.")
             else: st.info("Sin datos.")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (LIMPIO)
+# PESTAÑA 4: GRÁFICAS (SIN NÚMEROS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
