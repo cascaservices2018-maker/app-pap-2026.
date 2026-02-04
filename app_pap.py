@@ -162,10 +162,14 @@ if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_cr
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = None
 if "last_selected_project" not in st.session_state: st.session_state.last_selected_project = None
 if "stats_download" not in st.session_state: st.session_state.stats_download = {}
-# Estado para Pestaña 3
+# Estado para Pestaña 3 (Busqueda)
 if "p3_buffer_proy" not in st.session_state: st.session_state.p3_buffer_proy = None
 if "p3_buffer_ent" not in st.session_state: st.session_state.p3_buffer_ent = None
 if "p3_filter_hash" not in st.session_state: st.session_state.p3_filter_hash = ""
+# Estado para Undo (Deshacer borrado)
+if "backup_deleted_proy" not in st.session_state: st.session_state.backup_deleted_proy = None
+if "backup_deleted_ent" not in st.session_state: st.session_state.backup_deleted_ent = None
+if "undo_available" not in st.session_state: st.session_state.undo_available = False
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -210,9 +214,13 @@ with tab1:
                     nuevo = {"Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre, "Descripción": desc, "Num_Entregables": num_ent, "Categoría": limpiar_textos(", ".join(cats)), "Comentarios": comen, "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                     save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
                     st.success("¡Guardado!")
+                    # Guardamos el nombre del proyecto recién creado en sesión
                     st.session_state.proy_recien_creado = nombre
                     st.session_state.form_seed += 1
-                    time.sleep(1); st.rerun()
+                    # Forzamos recarga para que la Pestaña 2 lo vea
+                    st.cache_data.clear()
+                    time.sleep(1)
+                    st.rerun()
 
 # ==========================================
 # PESTAÑA 2: CARGA MASIVA (BÚNKER)
@@ -225,6 +233,8 @@ with tab2:
     if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         idx_defecto = 0
+        
+        # LOGICA AUTOMÁTICA: Si hay un proyecto recién creado, lo seleccionamos por defecto
         if st.session_state.proy_recien_creado in lista_proy:
             idx_defecto = lista_proy.index(st.session_state.proy_recien_creado)
             
@@ -234,23 +244,33 @@ with tab2:
         cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
         st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
-        if st.session_state.last_selected_project != proy_sel:
+        # LOGICA REFORZADA: Si cambiamos de proyecto O si es el recién creado (para forzar la tabla vacía)
+        es_nuevo = (proy_sel == st.session_state.proy_recien_creado)
+        
+        if st.session_state.last_selected_project != proy_sel or es_nuevo:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
-            if not exist.empty:
-                # MODIFICACIÓN: Se eliminó "Plantillas" del selector
+            
+            # Si es el proyecto nuevo, IGNORAMOS si hay datos previos (seguramente no) y forzamos la plantilla vacía
+            # Esto corrige el error donde no se ponían las filas automáticamente
+            if not exist.empty and not es_nuevo:
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                # MODIFICACIÓN: Se eliminó "Plantillas_Usadas"
+                # Generamos las filas vacías basadas en el número estimado
                 temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre", "Contenido", "Subcategorías"])
+            
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
+            
+            # Limpiamos la bandera de "recién creado" una vez que ya cargamos su plantilla
+            if es_nuevo:
+                st.session_state.proy_recien_creado = None 
 
         with st.form(key=f"form_masivo_{proy_sel}"):
             edited_df = st.data_editor(
                 st.session_state.df_buffer_masivo, 
                 num_rows="dynamic", 
-                use_container_width=True, # Compatibilidad
+                use_container_width=True, 
                 column_config={
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
@@ -278,7 +298,7 @@ with tab2:
                             "Contenido": r["Contenido"], 
                             "Categoría": cat, 
                             "Subcategoría": r["Subcategorías"], 
-                            "Plantillas": "", # MODIFICACIÓN: Se deja vacío
+                            "Plantillas": "", 
                             "Fecha_Registro": hoy
                         })
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
@@ -375,12 +395,11 @@ with tab3:
 
         with st.expander("📦 Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
-                # MODIFICACIÓN: Se filtran las columnas no deseadas para la vista
                 columnas_a_excluir = ["Plantillas", "Responsable", "Estatus", "Observaciones"]
                 cols_visibles = [c for c in st.session_state.p3_buffer_ent.columns if c not in columnas_a_excluir]
                 
                 ed_e = st.data_editor(
-                    st.session_state.p3_buffer_ent[cols_visibles], # Solo mostramos las columnas deseadas
+                    st.session_state.p3_buffer_ent[cols_visibles],
                     use_container_width=True, 
                     key="ed_p3_e",
                     column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")}
@@ -388,40 +407,71 @@ with tab3:
                 if st.button("💾 Actualizar Entregables"):
                     if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
                     df_m = load_data("Entregables")
-                    df_m.update(ed_e) # Update solo actualiza las columnas presentes en ed_e
+                    df_m.update(ed_e)
                     save_data(df_m, "Entregables")
                     
-                    # Actualizamos el buffer con los cambios hechos, recuperando las columnas ocultas
                     merged_buffer = st.session_state.p3_buffer_ent.copy()
                     merged_buffer.update(ed_e)
                     st.session_state.p3_buffer_ent = merged_buffer
                     st.success("✅ Actualizado.")
             else: st.info("Sin datos.")
 
-        # MODIFICACIÓN: NUEVA SECCIÓN PARA BORRAR PROYECTO
+        # ==========================
+        # ZONA DE PELIGRO Y DESHACER
+        # ==========================
         st.markdown("---")
         st.subheader("🗑️ Zona de Peligro: Borrar Proyecto")
-        st.warning("Esta acción borrará el proyecto y TODOS sus entregables asociados. No se puede deshacer.")
+        
+        # Lógica de Deshacer
+        if st.session_state.undo_available:
+            st.warning("⚠️ Acabas de borrar un proyecto. ¿Fue un error?")
+            if st.button("↩️ Deshacer Borrado (Restaurar)"):
+                # Recuperar datos
+                rec_proy = st.session_state.backup_deleted_proy
+                rec_ent = st.session_state.backup_deleted_ent
+                
+                # Cargar actuales
+                curr_proy = load_data("Proyectos")
+                curr_ent = load_data("Entregables")
+                
+                # Concatenar
+                restored_proy = pd.concat([curr_proy, rec_proy], ignore_index=True)
+                restored_ent = pd.concat([curr_ent, rec_ent], ignore_index=True)
+                
+                # Guardar
+                save_data(restored_proy, "Proyectos")
+                save_data(restored_ent, "Entregables")
+                
+                st.success("✅ Proyecto y entregables restaurados exitosamente.")
+                st.session_state.undo_available = False
+                st.session_state.backup_deleted_proy = None
+                st.session_state.backup_deleted_ent = None
+                time.sleep(1)
+                st.rerun()
+
+        st.warning("Esta acción borrará el proyecto y TODOS sus entregables asociados.")
         
         lista_borrar = sorted(df_embudo["Nombre del Proyecto"].unique())
         proy_borrar = st.selectbox("Seleccionar Proyecto a Eliminar Definitivamente:", options=lista_borrar, key="borrar_selector")
         
         if st.button("🚨 BORRAR PROYECTO Y SUS ENTREGABLES"):
             if proy_borrar:
-                # Cargar datos frescos
                 full_proy = load_data("Proyectos")
                 full_ent = load_data("Entregables")
                 
-                # Filtrar eliminando el seleccionado
+                # 1. Guardar copia de seguridad en sesión para Deshacer
+                st.session_state.backup_deleted_proy = full_proy[full_proy["Nombre del Proyecto"] == proy_borrar].copy()
+                st.session_state.backup_deleted_ent = full_ent[full_ent["Proyecto_Padre"] == proy_borrar].copy()
+                st.session_state.undo_available = True
+                
+                # 2. Eliminar
                 new_proy = full_proy[full_proy["Nombre del Proyecto"] != proy_borrar]
                 new_ent = full_ent[full_ent["Proyecto_Padre"] != proy_borrar]
                 
-                # Guardar
                 save_data(new_proy, "Proyectos")
                 save_data(new_ent, "Entregables")
                 
-                st.success(f"Proyecto '{proy_borrar}' eliminado correctamente.")
-                # Limpiar buffers
+                st.success(f"Proyecto '{proy_borrar}' eliminado. (Puedes deshacerlo arriba si te equivocaste)")
                 st.session_state.p3_buffer_proy = None
                 st.session_state.p3_buffer_ent = None
                 time.sleep(1)
@@ -522,7 +572,32 @@ with tab5:
 # PESTAÑA 6: GLOSARIO
 # ==========================================
 with tab6:
-    st.header("📖 Glosario")
+    st.header("📖 Glosario de Términos")
     st.markdown("""
-    **Gestión:** Dirección | **Comunicación:** Mensajes | **Infraestructura:** Instalaciones | **Investigación:** Historia.
+    ### 📂 Categorías
+
+    * **Gestión:** Archivos que tengan que ver con la Dirección integral del proyecto (artística, técnica y administrativa), proyectos y subproyectos de la organización, así como la asignación de recursos (presupuestos, cotizaciones, inventarios, análisis de recursos humanos), ejecución y control del proyecto, como rutas críticas, cronogramas, etc.
+    * **Comunicación:** Diseño y ejecución de mensajes, canales para alinear a internos/externos. Plan de comunicación, gestión de interesados, branding interno y externo, documentos de gestión de redes sociales, página web, marketing, memoria/archivo.
+    * **Infraestructura:** Instalaciones fijas y móviles, planos arquitectónicos, señalética. Mobiliario y equipo técnico (tramoya, producción, herramientas, tecnológico). Mantenimiento de instalaciones.
+    * **Investigación:** Historia de la finca, del CEDRAM, mapeos de la zona, sobre Pátzcuaro, sobre públicos, FODA, Círculos de Rosso, reporte PAP, presentación final PAP etc.
+
+    ---
+
+    ### 📂 Subcategorías
+
+    #### GESTIÓN
+    * **Administración:** Todo lo relacionado con cronogramas, planteamiento de necesidades, planificación, seguimiento y toma de decisiones.
+    * **Financiamiento:** Archivos de seguimiento a las becas, guías para aplicación a distintos planes de financiamiento, presupuestos, cotizaciones, otros recursos con información de posibles donantes, patrocinios, etc.
+    * **Vinculación:** Información de contacto, investigación y formatos de comunicación para y de proyectos que te acerquen a determinados públicos y agentes externos: personas, líderes de opinión, escuelas, planteles educativos con los que el CEDRAM puede generar un lazo. Relaciones públicas. Con quién le convendría al CEDRAM trabajar de cerca y cómo puede acercarse.
+
+    #### COMUNICACIÓN
+    * **Memoria/archivo CEDRAM:** Archivos como fotografías, videos, etc. que funcionen como memoria de las actividades realizadas por el equipo del CEDRAM.
+    * **Memoria/archivo PAP:** Archivos como fotografías, videos, etc. que funcionen como memoria de las actividades realizadas por el equipo del PAP.
+    * **Diseño:** Todo lo relacionado con la creación visual y conceptual de los proyectos como por ejemplo ideas gráficas, referencias, propuestas creativas, identidad visual, materiales de apoyo según el proyecto (folletos, pósters, infografías, plantillas).
+    * **Difusión:** Estrategias y materiales para dar a conocer los proyectos. Incluye contenido para redes sociales, campañas de comunicación, textos, imágenes, videos, calendarios de publicación y seguimiento de alcance e impacto, souvenirs.
+
+    #### INFRAESTRUCTURA
+    * **Diseño arquitectónico:** Archivos relacionados con el planteamiento y desarrollo de espacios. Incluye planos, conceptos espaciales, renders, referencias arquitectónicas, propuestas de uso de espacios y evolución de diseño.
+    * **Mantenimiento:** Señalética, mantenimiento y remodelación de espacios.
+    * **Productos teatrales:** Vestuario (diseño y realización), Kamishibai.
     """)
