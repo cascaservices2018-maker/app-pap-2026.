@@ -33,10 +33,10 @@ estilos_css = f"""
 st.markdown(estilos_css, unsafe_allow_html=True)
 
 # ==========================================
-# 📖 DICCIONARIO INTELIGENTE
+# 📖 DICCIONARIO INTELIGENTE (JERARQUIZADO)
 # ==========================================
 DICCIONARIO_CORRECTO = {
-    # INFRAESTRUCTURA (Prioridad Alta)
+    # --- INFRAESTRUCTURA (Prioridad Alta) ---
     "diseno arquitectonico": "Diseño arquitectónico",
     "diseño arquitectonico": "Diseño arquitectónico",
     "arquitectonico": "Diseño arquitectónico", 
@@ -44,24 +44,23 @@ DICCIONARIO_CORRECTO = {
     "planos": "Diseño arquitectónico",
     "mantenimiento": "Mantenimiento",
     "teatrales": "Productos teatrales",
-    "productos": "Productos teatrales",
-    "producto": "Productos teatrales",
+    "productos teatrales": "Productos teatrales",
     
-    # GESTIÓN
+    # --- GESTIÓN ---
     "administracion": "Administración", "admin": "Administración",
     "financiamiento": "Financiamiento", "finanza": "Financiamiento",
     "vinculacion": "Vinculación", "vinc": "Vinculación",
     "gestion": "Gestión", "gestión": "Gestión",
     
-    # COMUNICACIÓN
-    "comunicacion": "Comunicación", "comunicasion": "Comunicación", "comunica": "Comunicación",
-    "diseno": "Diseño", "diseño": "Diseño",
+    # --- COMUNICACIÓN ---
+    "comunicacion": "Comunicación", "comunica": "Comunicación",
+    "diseno": "Diseño", "diseño": "Diseño", # Solo se activa si NO es arquitectónico
     "grafico": "Diseño",
     "difusion": "Difusión", "difucion": "Difusión",
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo",
     
-    # INVESTIGACIÓN
-    "investigacion": "Investigación", "investigasion": "Investigación"
+    # --- INVESTIGACIÓN ---
+    "investigacion": "Investigación"
 }
 
 def normalizar_comparacion(texto):
@@ -76,6 +75,7 @@ def limpiar_textos(texto_sucio):
     for p in palabras:
         p_norm = normalizar_comparacion(p)
         encontrado = False
+        # Buscamos en orden de prioridad
         for error_clave, correccion_perfecta in DICCIONARIO_CORRECTO.items():
             if error_clave in p_norm: 
                 palabras_corregidas.append(correccion_perfecta)
@@ -126,6 +126,7 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
 # --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
 if "proy_recien_creado" not in st.session_state: st.session_state.proy_recien_creado = None
+# IMPORTANTE: Inicializamos el buffer como None para forzar carga limpia
 if "df_buffer_masivo" not in st.session_state: st.session_state.df_buffer_masivo = None
 if "last_selected_project" not in st.session_state: st.session_state.last_selected_project = None
 if "stats_download" not in st.session_state: st.session_state.stats_download = {}
@@ -178,17 +179,17 @@ with tab1:
                     time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (MEMORIA DE ACERO)
+# PESTAÑA 2: CARGA MASIVA (CORREGIDA - TIPOS SEGUROS)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Estabilidad Total:** Puedes copiar y pegar tablas de Excel sin problemas.")
+    st.info("💡 **Estabilidad Total:** Puedes copiar y pegar tablas de Excel sin problemas de formato.")
     
     df_p = load_data("Proyectos")
     if df_p.empty: st.warning("Cargando...")
     elif "Nombre del Proyecto" in df_p.columns:
         
-        # --- LÓGICA DE AUTO-SELECCIÓN ---
+        # --- AUTO-SELECCIÓN ---
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         idx_defecto = 0
         if st.session_state.proy_recien_creado in lista_proy:
@@ -200,61 +201,60 @@ with tab2:
         cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
         st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
-        # --- LÓGICA DE CARGA ÚNICA (SOLO SI CAMBIA EL PROYECTO) ---
+        # --- CARGA INICIAL (Solo si cambia proyecto) ---
         if st.session_state.last_selected_project != proy_sel:
-            # 1. Intentamos cargar de la BD
             df_e = load_data("Entregables")
             exist = pd.DataFrame()
             if not df_e.empty:
                 exist = df_e[df_e["Proyecto_Padre"] == proy_sel]
             
             if not exist.empty:
-                # Cargamos lo existente
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(
                     columns={"Entregable": "Nombre_Entregable", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"}
                 )
             else:
-                # Creamos tabla vacía
-                temp_df = pd.DataFrame(
-                    "", 
-                    index=range(estim), 
-                    columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"]
-                )
+                temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"])
             
-            # 2. CONVERTIMOS TODO A STRING PARA EVITAR ERRORES AL PEGAR
+            # **LAVADO DE TIPOS**: Convertimos todo a string desde el inicio
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
-            st.session_state.last_selected_project = proy_sel # Actualizamos el tracker
+            st.session_state.last_selected_project = proy_sel
 
-        # --- EDITOR CONECTADO A MEMORIA ---
-        # El data_editor lee del estado Y escribe al estado automáticamente
+        # --- EDITOR BLINDADO ---
         edited_df = st.data_editor(
             st.session_state.df_buffer_masivo, 
             num_rows="dynamic", 
-            key="editor_masivo_fijo", # Key fija para estabilidad
+            key="editor_masivo_fijo",
             use_container_width=True,
             column_config={
-                "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
+                # Forzamos que la columna se comporte como texto aunque le peguen números
+                "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}", validate="^.*$"),
                 "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
-                "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                "Contenido": st.column_config.TextColumn("Contenido", width="large"),
+                "Plantillas_Usadas": st.column_config.TextColumn("Link/Plantilla")
             }
         )
         
-        # Sincronización instantánea para que no se pierda al hacer click fuera
-        if not edited_df.equals(st.session_state.df_buffer_masivo):
-            st.session_state.df_buffer_masivo = edited_df
+        # --- EL TRUCO: CONVERSIÓN INMEDIATA ---
+        # Convertimos lo que sale del editor a string ANTES de guardarlo en session_state.
+        # Esto evita que "2024" se guarde como número y cause error en el siguiente ciclo.
+        edited_df_safe = edited_df.astype(str)
+
+        if not edited_df_safe.equals(st.session_state.df_buffer_masivo):
+            st.session_state.df_buffer_masivo = edited_df_safe
 
         if st.button("🚀 Guardar Cambios"):
-            validos = edited_df[edited_df["Nombre_Entregable"].notna() & (edited_df["Nombre_Entregable"] != "")].copy()
+            # Filtramos vacíos reales (str)
+            validos = edited_df_safe[
+                (edited_df_safe["Nombre_Entregable"].str.strip() != "") & 
+                (edited_df_safe["Nombre_Entregable"] != "nan")
+            ].copy()
+            
             if validos.empty: st.error("La tabla está vacía.")
             else:
                 try:
-                    # Limpieza
                     validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
                     df_m = load_data("Entregables")
-                    
-                    # Borramos versiones anteriores de este proyecto para sobreescribir limpio
-                    if not df_m.empty: 
-                        df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
+                    if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
                     
                     nuevos = []
                     hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -272,7 +272,6 @@ with tab2:
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
                     st.success("¡Actualizado con éxito!")
                     time.sleep(1)
-                    # Forzamos recarga limpia
                     st.session_state.last_selected_project = None 
                     st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
