@@ -65,13 +65,19 @@ DICCIONARIO_CORRECTO = {
 }
 
 def normalizar_comparacion(texto):
-    if pd.isna(texto) or str(texto).lower().strip() in ["nan", "none", ""]: return ""
+    # Permite convertir cualquier cosa a string seguro
+    if pd.isna(texto): return ""
     texto = str(texto).lower().strip()
+    if texto in ["nan", "none", ""]: return ""
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def limpiar_textos(texto_sucio):
-    if pd.isna(texto_sucio) or str(texto_sucio).strip() in ["", "nan", "None"]: return ""
-    palabras = [p.strip() for p in str(texto_sucio).split(',')]
+    # Convierte a string primero para manejar numeros pegados
+    if pd.isna(texto_sucio): return ""
+    texto_str = str(texto_sucio).strip()
+    if texto_str in ["", "nan", "None", "NaN"]: return ""
+    
+    palabras = [p.strip() for p in texto_str.split(',')]
     palabras_corregidas = []
     for p in palabras:
         p_norm = normalizar_comparacion(p)
@@ -178,11 +184,11 @@ with tab1:
                     time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (SANITIZACIÓN AGRESIVA)
+# PESTAÑA 2: CARGA MASIVA (MEMORIA PASIVA)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
-    st.info("💡 **Estabilidad Total:** Puedes copiar y pegar tablas de Excel sin problemas de formato.")
+    st.info("💡 **Estabilidad Total:** Puedes copiar y pegar tablas de Excel (incluso con números) sin que se borren.")
     
     df_p = load_data("Proyectos")
     if df_p.empty: st.warning("Cargando...")
@@ -200,7 +206,7 @@ with tab2:
         cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
         st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
-        # --- CARGA INICIAL (Solo si cambia proyecto) ---
+        # --- CARGA INICIAL (Solo al cambiar proyecto) ---
         if st.session_state.last_selected_project != proy_sel:
             df_e = load_data("Entregables")
             exist = pd.DataFrame()
@@ -208,24 +214,26 @@ with tab2:
                 exist = df_e[df_e["Proyecto_Padre"] == proy_sel]
             
             if not exist.empty:
+                # Cargamos lo que hay y lo convertimos a string para empezar limpios
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría", "Plantillas"]].rename(
                     columns={"Entregable": "Nombre_Entregable", "Subcategoría": "Subcategorías", "Plantillas": "Plantillas_Usadas"}
                 )
             else:
                 temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"])
             
-            # SANITIZACIÓN INICIAL: Convertir todo a string puro y eliminar NaNs
+            # Guardamos en buffer como string para asegurar compatibilidad inicial
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
-        # --- EDITOR CON MEMORIA ---
+        # --- EDITOR PASIVO (No interfiere con el formato al pegar) ---
+        # Usamos una key dinámica basada en el proyecto para que se resetee solo si cambias de proyecto
         edited_df = st.data_editor(
             st.session_state.df_buffer_masivo, 
             num_rows="dynamic", 
-            key="editor_masivo_fijo",
+            key=f"editor_{proy_sel}", 
             use_container_width=True,
             column_config={
-                # Configuración relajada para aceptar pegado masivo
+                # No forzamos validación regex aquí para permitir que el pegado fluya
                 "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                 "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
                 "Contenido": st.column_config.TextColumn("Contenido", width="large"),
@@ -233,26 +241,27 @@ with tab2:
             }
         )
         
-        # --- SANITIZACIÓN EN TIEMPO REAL (EL SECRETO) ---
-        # 1. Convertimos a string para matar cualquier tipo 'float' o 'int' que venga del pegado
-        # 2. Reemplazamos 'nan' literal o 'None' por cadena vacía
-        edited_df_safe = edited_df.astype(str).replace({"nan": "", "None": "", "Nb": ""})
-
-        # Solo actualizamos el estado si hubo cambios reales
-        if not edited_df_safe.equals(st.session_state.df_buffer_masivo):
-            st.session_state.df_buffer_masivo = edited_df_safe
+        # --- ACTUALIZACIÓN DE MEMORIA (Sin procesar) ---
+        # Simplemente guardamos lo que el usuario está haciendo, sea lo que sea.
+        st.session_state.df_buffer_masivo = edited_df
 
         if st.button("🚀 Guardar Cambios"):
-            # Filtramos filas vacías
-            validos = edited_df_safe[
-                (edited_df_safe["Nombre_Entregable"].str.strip() != "") & 
-                (edited_df_safe["Nombre_Entregable"] != "")
+            # AQUÍ es donde ocurre la magia de la limpieza.
+            # 1. Convertimos todo lo que haya en la tabla a String (por si pegaron números)
+            df_final_process = edited_df.astype(str).replace({"nan": "", "None": "", "NaN": ""})
+            
+            # 2. Filtramos filas vacías
+            validos = df_final_process[
+                (df_final_process["Nombre_Entregable"].str.strip() != "") & 
+                (df_final_process["Nombre_Entregable"] != "")
             ].copy()
             
             if validos.empty: st.error("La tabla está vacía.")
             else:
                 try:
+                    # 3. Aplicamos el diccionario corrector
                     validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
+                    
                     df_m = load_data("Entregables")
                     if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
                     
@@ -272,7 +281,7 @@ with tab2:
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
                     st.success("¡Actualizado con éxito!")
                     time.sleep(1)
-                    st.session_state.last_selected_project = None 
+                    st.session_state.last_selected_project = None # Fuerza recarga limpia
                     st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
