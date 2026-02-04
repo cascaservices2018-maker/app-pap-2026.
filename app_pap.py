@@ -120,8 +120,7 @@ def graficar_oscuro(df, x_col, y_col, titulo_x, titulo_y, color_barra="#FFFFFF")
         y=alt.Y(y_col, title=titulo_y),
         tooltip=[x_col, y_col]
     ).configure_axis(labelColor='white', titleColor='white', gridColor='#660000').properties(height=300)
-    # CORRECCIÓN DE WARNING: Usamos width='stretch' en lugar de use_container_width
-    st.altair_chart(chart, theme="streamlit", use_container_width=True) 
+    st.altair_chart(chart, theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
@@ -178,7 +177,7 @@ with tab1:
                     time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (ESTABILIZADA)
+# PESTAÑA 2: CARGA MASIVA (CORREGIDO ERROR LOGS)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
@@ -199,8 +198,7 @@ with tab2:
         cat, estim = info.get("Categoría", "General"), int(info.get("Num_Entregables", 5))
         st.caption(f"Categoría: {cat} | Espacios: {estim}")
 
-        # --- GESTIÓN DE MEMORIA ---
-        # Solo reiniciamos el buffer si cambiamos de proyecto o si está vacío
+        # --- BUFFER MEMORIA ---
         if st.session_state.last_selected_project != proy_sel or st.session_state.df_buffer_masivo is None:
             df_e = load_data("Entregables")
             exist = pd.DataFrame()
@@ -214,18 +212,16 @@ with tab2:
             else:
                 temp_df = pd.DataFrame("", index=range(estim), columns=["Nombre_Entregable", "Contenido", "Subcategorías", "Plantillas_Usadas"])
             
-            # Inicializamos como string para evitar errores de tipo al inicio
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
         # --- EDITOR ---
-        # CORRECCIÓN DE WARNING: width="stretch" en lugar de use_container_width=True
-        # IMPORTANTE: No manipulamos el dataframe mientras se edita para evitar el "parpadeo"
+        # CORRECCIÓN: 'use_container_width=True' cambiado por 'width="stretch"' para evitar logs.
         edited_df = st.data_editor(
             st.session_state.df_buffer_masivo, 
             num_rows="dynamic", 
             key=f"editor_{proy_sel}", 
-            width="stretch",
+            width="stretch", # <--- NUEVA SINTAXIS
             column_config={
                 "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Sugerencias: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                 "Nombre_Entregable": st.column_config.TextColumn("Nombre", required=True),
@@ -234,17 +230,16 @@ with tab2:
             }
         )
 
-        # Actualizamos el buffer con lo que devuelve el editor para mantener el estado
+        # Sync buffer
         if not edited_df.equals(st.session_state.df_buffer_masivo):
-            st.session_state.df_buffer_masivo = edited_df
+            st.session_state.df_buffer_masivo = edited_df.astype(str)
 
         if st.button("🚀 Guardar Cambios"):
-            # AHORA SÍ limpiamos y convertimos tipos (al final, no durante la edición)
-            # Esto evita que '2024' (int) choque con 'Texto' durante el pegado
-            df_final_process = st.session_state.df_buffer_masivo.astype(str).replace({"nan": "", "None": "", "NaN": ""})
+            df_final = st.session_state.df_buffer_masivo.copy()
+            df_final = df_final.replace({"nan": "", "None": "", "NaN": ""})
             
-            validos = df_final_process[
-                (df_final_process["Nombre_Entregable"].str.strip() != "")
+            validos = df_final[
+                (df_final["Nombre_Entregable"].str.strip() != "")
             ].copy()
             
             if validos.empty: st.error("La tabla está vacía o no tiene nombres.")
@@ -270,12 +265,12 @@ with tab2:
                     save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
                     st.success("¡Guardado exitoso!")
                     time.sleep(1)
-                    st.session_state.last_selected_project = None # Reinicia carga limpia
+                    st.session_state.last_selected_project = None 
                     st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: BÚSQUEDA Y EDICIÓN
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (CORREGIDO ERROR LOGS)
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
@@ -309,7 +304,7 @@ with tab3:
 
         st.markdown("---")
         with st.expander(f"📂 1. Tabla de Proyectos ({len(df_v)})", expanded=True):
-            # CORRECCIÓN WARNING
+            # CORRECCIÓN: width="stretch"
             ed_p = st.data_editor(df_v, width="stretch", key="ep", num_rows="fixed", column_config={
                 "Categoría": st.column_config.TextColumn("Categoría(s)"),
                 "Año": st.column_config.NumberColumn("Año", format="%d", step=1, required=True),
@@ -324,7 +319,7 @@ with tab3:
             if not df_ent.empty:
                 df_ef = df_ev[df_ev["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())] if f_sub else df_ent[df_ent["Proyecto_Padre"].isin(df_v["Nombre del Proyecto"].unique())]
                 if not df_ef.empty:
-                    # CORRECCIÓN WARNING
+                    # CORRECCIÓN: width="stretch"
                     ed_e = st.data_editor(df_ef, width="stretch", key="ee", num_rows="fixed", column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")})
                     if st.button("💾 Actualizar Entregables"):
                         if "Subcategoría" in ed_e.columns: ed_e["Subcategoría"] = ed_e["Subcategoría"].apply(limpiar_textos)
@@ -401,7 +396,6 @@ with tab4:
                     bars = base.mark_bar(size=30, cornerRadius=5).encode(y='Total:Q')
                     text = base.mark_text(dy=-10, color='white').encode(y='Total:Q', text=alt.Text('Total:Q'))
                     chart = alt.layer(bars, text).properties(width='container', height=250).facet(column=alt.Column('Año:O', header=alt.Header(labelColor="white", titleColor="white"))).configure_view(stroke='transparent')
-                    # CORRECCIÓN WARNING
                     st.altair_chart(chart, use_container_width=True)
             
             st.markdown("---")
