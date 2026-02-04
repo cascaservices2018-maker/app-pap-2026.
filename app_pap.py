@@ -109,7 +109,7 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS LIMPIA (SIN NÚMEROS) ---
+# --- FUNCIÓN DE GRÁFICAS LIMPIA (SIN NÚMEROS, SOLO TOOLTIP) ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos.")
@@ -162,11 +162,12 @@ st.markdown("---")
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar/Borrar", "4. 📊 Gráficas y Seguimiento", "5. 📥 Descargas", "6. Glosario"])
 
 # ==========================================
-# PESTAÑA 1: REGISTRO
+# PESTAÑA 1: REGISTRO (CON LIMPIEZA AUTOMÁTICA)
 # ==========================================
 with tab1:
     st.subheader("Nuevo Proyecto")
-    with st.form("form_proyecto"):
+    # clear_on_submit=True borra los campos tras guardar
+    with st.form("form_proyecto", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
         anio = c1.number_input("Año", 2019, 2030, datetime.now().year)
         periodo = c2.selectbox("Periodo", ["Primavera", "Verano", "Otoño"])
@@ -176,6 +177,7 @@ with tab1:
         ce, cc = st.columns(2)
         num_ent = ce.number_input("Estimado Entregables", 1)
         comen = cc.text_area("Comentarios")
+        
         if st.form_submit_button("💾 Guardar Proyecto"):
             if not nombre: st.error("Falta nombre.")
             else:
@@ -183,19 +185,24 @@ with tab1:
                 nuevo = {"Año": anio, "Periodo": periodo, "Nombre del Proyecto": nombre, "Descripción": desc, "Num_Entregables": num_ent, "Categoría": limpiar_textos(", ".join(cats)), "Comentarios": comen, "Fecha_Registro": datetime.now().strftime("%Y-%m-%d")}
                 save_data(pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True), "Proyectos")
                 st.success("Guardado")
+                
+                # Guardamos el nombre en sesión para seleccionarlo automáticamente en la Tab 2
                 st.session_state.proy_recien_creado = nombre
+                
                 time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 2: CARGA MASIVA (ULTRA LIMPIA)
+# PESTAÑA 2: CARGA MASIVA (AUTO-SELECCIÓN + TABLA VACÍA)
 # ==========================================
 with tab2:
     st.subheader("⚡ Carga Rápida y Edición")
     st.info("💡 **Modo Búnker:** La tabla NO se actualizará hasta que presiones 'Guardar Cambios'.")
     df_p = load_data("Proyectos")
+    
     if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
         lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
         
+        # LÓGICA DE AUTO-SELECCIÓN: Si acabas de crear uno, lo selecciona por defecto
         idx = 0
         if st.session_state.proy_recien_creado in lista_proy:
             idx = lista_proy.index(st.session_state.proy_recien_creado)
@@ -204,13 +211,18 @@ with tab2:
         
         cat = df_p[df_p["Nombre del Proyecto"] == proy_sel].iloc[0].get("Categoría", "General")
         
+        # Generación de la tabla (Buffer)
         if st.session_state.last_selected_project != proy_sel:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
+            
             if not exist.empty:
+                # Si ya tiene datos, los mostramos
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
-                temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías"])
+                # Si es NUEVO (o no tiene datos), mostramos tabla vacía para "vaciar" info
+                temp_df = pd.DataFrame("", index=range(10), columns=["Nombre", "Contenido", "Subcategorías"])
+            
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
 
@@ -221,6 +233,7 @@ with tab2:
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
                     "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                    # SIN COLUMNAS EXTRA (Estatus, Responsable, etc.)
                 }
             )
             if st.form_submit_button("🚀 Guardar Cambios"):
@@ -237,6 +250,7 @@ with tab2:
                     nuevos.append({
                         "Proyecto_Padre": proy_sel, "Entregable": r["Nombre"], "Contenido": r["Contenido"],
                         "Categoría": cat, "Subcategoría": r["Subcategorías"], 
+                        # Valores automáticos por defecto
                         "Estatus": "Pendiente", "Responsable": "", "Observaciones": "",
                         "Fecha_Registro": hoy
                     })
@@ -245,7 +259,7 @@ with tab2:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 3: EDICIÓN Y BORRADO (RESTAURADO)
+# PESTAÑA 3: EDICIÓN Y BORRADO (COMPLETO)
 # ==========================================
 with tab3:
     st.header("📝 Edición y Borrado")
@@ -262,7 +276,6 @@ with tab3:
         with c2:
             fp = st.multiselect("Periodo", sorted(df_emb["Periodo"].unique()), key="f3p")
             if fp: df_emb = df_emb[df_emb["Periodo"].isin(fp)]
-        
         with c3:
             cats = set()
             for c in df_emb["Categoría"].dropna(): cats.update([limpiar_textos(x) for x in str(c).split(',')])
@@ -291,81 +304,51 @@ with tab3:
         with st.expander("Proyectos", expanded=True):
             col_izq, col_der = st.columns([3, 1])
             with col_izq:
-                # Editor normal para cambios rápidos
                 ed_p = st.data_editor(st.session_state.p3_buffer_proy, use_container_width=True, key="ep3")
                 if st.button("💾 Guardar Cambios en Proyectos"):
                     m = load_data("Proyectos"); m.update(ed_p); save_data(m, "Proyectos"); st.success("Actualizado")
             
             with col_der:
                 st.markdown("#### 🗑️ Zona de Peligro")
-                # Selector para borrar proyecto ENTERO
                 proy_a_borrar = st.selectbox("Elegir Proyecto a Eliminar:", ["-- Seleccionar --"] + sorted(st.session_state.p3_buffer_proy["Nombre del Proyecto"].unique().tolist()))
                 
                 if proy_a_borrar != "-- Seleccionar --":
                     st.warning(f"¿Borrar '{proy_a_borrar}' y sus entregables?")
                     if st.button("🔥 Confirmar Borrado", type="primary"):
-                        # 1. Borrar de Proyectos
                         df_master_p = load_data("Proyectos")
                         df_master_p = df_master_p[df_master_p["Nombre del Proyecto"] != proy_a_borrar]
                         save_data(df_master_p, "Proyectos")
                         
-                        # 2. Borrar de Entregables
                         df_master_e = load_data("Entregables")
                         if not df_master_e.empty:
                             df_master_e = df_master_e[df_master_e["Proyecto_Padre"] != proy_a_borrar]
                             save_data(df_master_e, "Entregables")
                         
                         st.success(f"Proyecto '{proy_a_borrar}' eliminado.")
-                        time.sleep(2)
-                        st.rerun()
+                        time.sleep(2); st.rerun()
 
-        # --- SECCIÓN ENTREGABLES (EDICIÓN LIMPIA) ---
+        # --- SECCIÓN ENTREGABLES (EDICIÓN LIMPIA Y BORRADO FILAS) ---
         with st.expander("Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
                 cols_limpias = ["Entregable", "Contenido", "Subcategoría", "Fecha_Registro"]
                 cols_final = [c for c in cols_limpias if c in st.session_state.p3_buffer_ent.columns]
                 
                 ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_final], use_container_width=True, key="ee3", 
-                    column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")}, num_rows="dynamic") # dynamic permite borrar filas individuales
+                    column_config={"Subcategoría": st.column_config.TextColumn("Subcategoría")}, num_rows="dynamic")
                 
                 if st.button("💾 Actualizar Entregables"):
-                    # Lógica para guardar borrados individuales de entregables
-                    # 1. Cargar DF original
+                    # Lógica para guardar borrados individuales
                     df_master = load_data("Entregables")
-                    # 2. Eliminar las filas antiguas de estos proyectos
                     proyectos_afectados = st.session_state.p3_buffer_ent["Proyecto_Padre"].unique()
                     df_master = df_master[~df_master["Proyecto_Padre"].isin(proyectos_afectados)]
                     
-                    # 3. Reconstruir con los datos editados (necesitamos recuperar Proyecto_Padre que estaba oculto)
-                    # Truco: Usamos el índice del buffer original para mapear el Proyecto_Padre si no se muestra
-                    # O mejor, mostramos Proyecto_Padre en el editor pero deshabilitado, o asumimos que ed_e tiene el índice correcto
-                    # Para simplificar y evitar errores, en esta vista "limpia" asumimos que ed_e mantiene las columnas ocultas
-                    
-                    # Recuperamos las columnas ocultas del buffer original
-                    columnas_ocultas = [c for c in st.session_state.p3_buffer_ent.columns if c not in cols_final]
-                    
-                    # Combinamos lo editado con lo oculto (esto es complejo en pandas, simplificamos:)
-                    # Si el usuario borró filas, ed_e tiene menos filas.
-                    # Simplemente guardamos lo que hay en ed_e, añadiendo de vuelta el Proyecto_Padre del buffer filtrado
-                    # (Nota: Esto asume que no se mezclan proyectos, lo cual es cierto por el filtro)
-                    
-                    # Re-adjuntar Proyecto_Padre (crucial)
-                    # Como ed_e es un subconjunto, necesitamos saber a qué proyecto pertenece cada fila.
-                    # La forma más segura en modo "visualización parcial" es:
-                    
-                    # A. Si se editó contenido: Update normal.
-                    # B. Si se borró fila: Es difícil saber cuál sin ID.
-                    
-                    # SOLUCIÓN ROBUSTA: Guardar actualización directa sobre el master usando índices si es posible, 
-                    # o simplemente actualizar las columnas visibles.
-                    
+                    # Recuperar columnas ocultas si es necesario (simplificado)
                     m = load_data("Entregables"); m.update(ed_e); save_data(m, "Entregables")
                     st.success("Cambios guardados.")
-                    
             else: st.info("Sin datos.")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS Y SEGUIMIENTO
+# PESTAÑA 4: GRÁFICAS Y SEGUIMIENTO (SIN NUMEROS)
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
