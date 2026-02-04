@@ -28,9 +28,9 @@ estilos_css = f"""
     [data-testid="stMetricValue"], h1, h2, h3, p, li {{ color: white !important; }}
     .vega-embed svg text {{ fill: white !important; }}
     .streamlit-expanderHeader {{ background-color: #262730; color: white; }}
-    /* Estilo para las métricas (contadores) */
-    [data-testid="stMetricLabel"] {{ color: #FFD700 !important; font-weight: bold; }}
-    [data-testid="stMetricValue"] {{ color: white !important; font-size: 2.5rem !important; }}
+    /* Estilo para los contadores (Métricas) */
+    [data-testid="stMetricLabel"] {{ color: #FFD700 !important; font-weight: bold; font-size: 1.1rem; }}
+    [data-testid="stMetricValue"] {{ color: white !important; font-size: 3rem !important; font-weight: 700; }}
 </style>
 """
 st.markdown(estilos_css, unsafe_allow_html=True)
@@ -39,6 +39,7 @@ st.markdown(estilos_css, unsafe_allow_html=True)
 # 📖 DICCIONARIO INTELIGENTE
 # ==========================================
 DICCIONARIO_CORRECTO = {
+    # INFRAESTRUCTURA
     "diseno arquitectonico": "Diseño arquitectónico",
     "diseño arquitectonico": "Diseño arquitectónico",
     "arquitectonico": "Diseño arquitectónico", 
@@ -48,15 +49,18 @@ DICCIONARIO_CORRECTO = {
     "teatrales": "Productos teatrales",
     "productos": "Productos teatrales",
     "producto": "Productos teatrales",
+    # GESTIÓN
     "administracion": "Administración", "admin": "Administración",
     "financiamiento": "Financiamiento", "finanza": "Financiamiento",
     "vinculacion": "Vinculación", "vinc": "Vinculación",
     "gestion": "Gestión", "gestión": "Gestión",
+    # COMUNICACIÓN
     "comunicacion": "Comunicación", "comunica": "Comunicación",
     "diseno": "Diseño", "diseño": "Diseño",
     "grafico": "Diseño",
     "difusion": "Difusión", "difucion": "Difusión", "dufusion": "Difusión",
     "memoria": "Memoria/Archivo", "archivo": "Memoria/Archivo",
+    # INVESTIGACIÓN
     "investigacion": "Investigación", "investigasion": "Investigación"
 }
 
@@ -258,6 +262,7 @@ with tab2:
                     validos["Subcategorías"] = validos["Subcategorías"].apply(limpiar_textos)
                     df_m = load_data("Entregables")
                     if not df_m.empty: df_m = df_m[df_m["Proyecto_Padre"] != proy_sel]
+                    
                     nuevos = []
                     hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     for _, r in validos.iterrows():
@@ -277,7 +282,7 @@ with tab2:
                 except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
-# PESTAÑA 3: BÚSQUEDA Y EDICIÓN
+# PESTAÑA 3: BÚSQUEDA Y EDICIÓN (CASCADA)
 # ==========================================
 with tab3:
     st.header("📝 Edición de Base de Datos")
@@ -374,16 +379,14 @@ with tab4:
         # 2. Filtro de Entregables (Cruce seguro)
         df_e_f = df_eg.copy() if not df_eg.empty else pd.DataFrame()
         if not df_e_f.empty:
-            # Primero filtro por subcategoría si hay
             if sg:
                 df_e_f = df_e_f[df_e_f["Subcategoría"].apply(lambda x: any(s in str(x) for s in sg))]
-                # Si filtro por subcategoría, los proyectos también se restringen
                 df_f = df_f[df_f["Nombre del Proyecto"].isin(df_e_f["Proyecto_Padre"])]
             
             # Asegurar que solo cuento entregables de los proyectos visibles
             df_e_f = df_e_f[df_e_f["Proyecto_Padre"].isin(df_f["Nombre del Proyecto"])]
 
-        # --- CONTADORES TOTALES ---
+        # --- CONTADORES TOTALES (KPIs) ---
         k1, k2 = st.columns(2)
         k1.metric("📦 Total Proyectos", len(df_f))
         k2.metric("📄 Total Entregables", len(df_e_f))
