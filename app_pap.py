@@ -405,7 +405,6 @@ with tab3:
 
         with st.expander("📦 Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
-                # MODIFICACIÓN PREVIA: Ocultar columnas en ENTREGABLES
                 columnas_a_excluir = ["Plantillas", "Responsable", "Estatus", "Observaciones"]
                 cols_visibles = [c for c in st.session_state.p3_buffer_ent.columns if c not in columnas_a_excluir]
                 
@@ -608,10 +607,12 @@ with tab6:
 with tab7:
     st.header("🧮 Tablero de Control y Contadores")
     
+    # Cargamos datos frescos
     df_c_proy = load_data("Proyectos")
     df_c_entr = load_data("Entregables")
     
     if not df_c_proy.empty:
+        # Limpieza inicial
         if "Categoría" in df_c_proy.columns: 
             df_c_proy["Categoría"] = df_c_proy["Categoría"].apply(limpiar_textos)
         if not df_c_entr.empty and "Subcategoría" in df_c_entr.columns: 
@@ -620,6 +621,7 @@ with tab7:
         st.markdown("### 🔎 Filtros Globales")
         fc1, fc2, fc3, fc4 = st.columns(4)
         
+        # Filtros idénticos a gráficas
         f_years = fc1.multiselect("Año", sorted(df_c_proy["Año"].unique()), key="c_y")
         f_period = fc2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="c_p")
         f_categ = fc3.multiselect("Categoría", CATEGORIAS_LISTA, key="c_c")
@@ -627,6 +629,7 @@ with tab7:
         
         st.markdown("---")
 
+        # 1. Filtramos Proyectos base (Año, Periodo, Categoría)
         df_filtered_proy = df_c_proy.copy()
         if f_years: 
             df_filtered_proy = df_filtered_proy[df_filtered_proy["Año"].isin(f_years)]
@@ -635,26 +638,42 @@ with tab7:
         if f_categ: 
             df_filtered_proy = df_filtered_proy[df_filtered_proy["Categoría"].apply(lambda x: any(c in str(x) for c in f_categ))]
             
+        # Obtenemos los proyectos resultantes de este primer filtro
         proyectos_visibles = df_filtered_proy["Nombre del Proyecto"].unique()
 
+        # 2. Filtramos Entregables base (que pertenezcan a los proyectos visibles)
         df_filtered_entr = pd.DataFrame()
         if not df_c_entr.empty:
             df_filtered_entr = df_c_entr[df_c_entr["Proyecto_Padre"].isin(proyectos_visibles)]
 
+        # 3. Filtro cruzado por Subcategoría (si aplica)
+        # Si seleccionan Subcategoría, debemos restringir tanto entregables como proyectos
         if f_subcat and not df_filtered_entr.empty:
+            # Filtramos los entregables que cumplen con la subcategoría
             df_filtered_entr = df_filtered_entr[df_filtered_entr["Subcategoría"].apply(lambda x: any(s in str(x) for s in f_subcat))]
+            
+            # Ahora, actualizamos la lista de proyectos para que SOLO muestre los que tienen esos entregables
             proyectos_con_subcat = df_filtered_entr["Proyecto_Padre"].unique()
             df_filtered_proy = df_filtered_proy[df_filtered_proy["Nombre del Proyecto"].isin(proyectos_con_subcat)]
 
+        # --- CÁLCULO DE TOTALES ---
         total_proyectos = len(df_filtered_proy)
         total_entregables = len(df_filtered_entr)
         
+        # Mostramos Metricas Grandes
         m1, m2 = st.columns(2)
         m1.metric("📁 Total Proyectos", total_proyectos, border=True)
         m2.metric("📄 Total Entregables", total_entregables, border=True)
         
+        # Lista de proyectos
         if total_proyectos > 0:
             with st.expander("Ver lista de proyectos filtrados"):
                 st.dataframe(df_filtered_proy[["Año", "Periodo", "Nombre del Proyecto", "Categoría"]], use_container_width=True, hide_index=True)
+
+        # NUEVO: Lista de entregables
+        if total_entregables > 0:
+            with st.expander("Ver lista de entregables filtrados"):
+                # Seleccionamos columnas relevantes para mostrar
+                st.dataframe(df_filtered_entr[["Proyecto_Padre", "Entregable", "Subcategoría", "Contenido"]], use_container_width=True, hide_index=True)
     else:
         st.info("No hay datos cargados.")
