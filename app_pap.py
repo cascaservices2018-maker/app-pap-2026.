@@ -22,6 +22,7 @@ LOGO_URL = "https://github.com/cascaservices2018-maker/app-pap-2026./blob/main/c
 
 CATEGORIAS_LISTA = ["Gestión", "Comunicación", "Infraestructura", "Investigación"]
 SUBCATEGORIAS_SUGERIDAS = ["Administración", "Financiamiento", "Vinculación", "Memoria/archivo CEDRAM", "Diseño", "Difusión", "Diseño arquitectónico", "Mantenimiento", "Productos teatrales"]
+ESTATUS_OPCIONES = ["Completado", "En Proceso", "Pendiente", "Pausado", "Cancelado"]
 
 # ==========================================
 # 🎨 PERSONALIZACIÓN DE COLORES (CSS)
@@ -92,7 +93,11 @@ def load_data(sheet_name):
             df.columns = df.columns.str.strip() 
             if "Periodo" in df.columns:
                 df["Periodo"] = df["Periodo"].astype(str).str.strip().str.title()
-        return df
+            # Asegurar columnas nuevas de seguimiento
+            if "Estatus" not in df.columns: df["Estatus"] = "Pendiente"
+            if "Responsable" not in df.columns: df["Responsable"] = ""
+            if "Observaciones" not in df.columns: df["Observaciones"] = ""
+        return df.fillna("")
     except: return pd.DataFrame()
 
 def save_data(df, sheet_name):
@@ -101,35 +106,58 @@ def save_data(df, sheet_name):
         st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar: {e}")
 
-# --- FUNCIÓN DE GRÁFICAS ---
+# --- FUNCIÓN DE GRÁFICAS CORREGIDA (SOLUCIÓN ENCIMADO) ---
 def graficar_multiformato(df, x_col, y_col, titulo, tipo_grafica, color_base="#FF4B4B"):
     if df.empty:
         st.caption("Sin datos.")
         return
+    
+    # Base común con tooltips
     base = alt.Chart(df).encode(tooltip=[x_col, y_col])
     
     if tipo_grafica == "Barras":
-        bars = base.mark_bar(color=color_base, cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
+        # Barras verticales
+        bars = base.mark_bar(color=color_base, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X(x_col, title=None, sort='-y', axis=alt.Axis(labelColor='white', labelAngle=-45)),
             y=alt.Y(y_col, title="Total", axis=alt.Axis(labelColor='white', gridColor='#444444'))
         )
-        text = base.mark_text(dy=-10, color='white', fontSize=14, fontWeight='bold').encode(
-            x=alt.X(x_col, sort='-y'), y=alt.Y(y_col), text=alt.Text(y_col)
+        # Texto encima de la barra (con clip=False para que no se corte)
+        text = base.mark_text(dy=-10, color='white', fontSize=12, fontWeight='bold').encode(
+            x=alt.X(x_col, sort='-y'), 
+            y=alt.Y(y_col), 
+            text=alt.Text(y_col)
         )
-        chart = bars + text
+        # Combinamos y aseguramos que se vea todo
+        chart = (bars + text).properties(height=350)
+
     else:
-        radio = 60 if tipo_grafica == "Donut" else 0
-        pie = base.mark_arc(innerRadius=radio, outerRadius=120, stroke="#262730").encode(
+        # Lógica para Pastel y Donut
+        radio_interno = 60 if tipo_grafica == "Donut" else 0
+        radio_externo = 120
+        
+        # El gráfico circular base
+        pie = base.mark_arc(innerRadius=radio_interno, outerRadius=radio_externo, stroke="#262730").encode(
             theta=alt.Theta(field=y_col, type="quantitative"),
             color=alt.Color(field=x_col, type="nominal", legend=alt.Legend(title=titulo, labelColor='white')),
             order=alt.Order(field=y_col, sort="descending")
         )
-        text = base.mark_text(radius=140, fill="white", fontWeight='bold').encode(
-            theta=alt.Theta(field=y_col, stack=True), text=alt.Text(y_col),
-            order=alt.Order(field=y_col, sort="descending"), color=alt.value("white")
+        
+        # AJUSTE CLAVE: Posicionar el texto DENTRO de la rebanada para evitar colisiones externas
+        # Usamos un radio menor al externo (ej. 90) para que quede centrado en la banda de color
+        text_radius = radio_interno + (radio_externo - radio_interno) / 2 if tipo_grafica == "Donut" else radio_externo / 1.5
+        
+        text = base.mark_text(radius=text_radius, fill="black", fontWeight='bold', fontSize=11).encode(
+            theta=alt.Theta(field=y_col, stack=True), 
+            text=alt.Text(y_col),
+            order=alt.Order(field=y_col, sort="descending"),
+            # Truco: Si el valor es 0, no mostrarlo para limpiar
+            opacity=alt.condition(alt.datum[y_col] > 0, alt.value(1), alt.value(0))
         )
-        chart = pie + text
-    st.altair_chart(chart.properties(height=350).configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
+        
+        chart = (pie + text).properties(height=350)
+
+    # Configuración final limpia
+    st.altair_chart(chart.configure_view(stroke='transparent'), theme="streamlit", use_container_width=True)
 
 # --- VARIABLES DE ESTADO ---
 if "form_seed" not in st.session_state: st.session_state.form_seed = 0
@@ -153,7 +181,7 @@ with col_logo: st.image(LOGO_URL, width=170)
 with col_titulo: st.title("Base de datos PAP PERIODOS 2019-2026")
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas", "5. 📥 Descargas", "6. Glosario"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["1. Registrar", "2. Carga Masiva", "3. 📝 Buscar/Editar", "4. 📊 Gráficas y Seguimiento", "5. 📥 Descargas", "6. Glosario"])
 
 # ==========================================
 # PESTAÑA 1: REGISTRO
@@ -195,10 +223,11 @@ with tab2:
         if st.session_state.last_selected_project != proy_sel:
             df_e = load_data("Entregables")
             exist = df_e[df_e["Proyecto_Padre"] == proy_sel] if not df_e.empty else pd.DataFrame()
-            # SELECCIÓN ESTRICTA DE COLUMNAS PARA EVITAR PLANTILLAS
             if not exist.empty:
+                # SE ELIMINÓ 'Plantillas' DE AQUÍ
                 temp_df = exist[["Entregable", "Contenido", "Subcategoría"]].rename(columns={"Entregable": "Nombre", "Subcategoría": "Subcategorías"})
             else:
+                # SE ELIMINÓ 'Plantillas' DE AQUÍ
                 temp_df = pd.DataFrame("", index=range(5), columns=["Nombre", "Contenido", "Subcategorías"])
             st.session_state.df_buffer_masivo = temp_df.fillna("").astype(str)
             st.session_state.last_selected_project = proy_sel
@@ -210,6 +239,7 @@ with tab2:
                     "Subcategorías": st.column_config.TextColumn("Subcategoría(s)", help=f"Opciones: {', '.join(SUBCATEGORIAS_SUGERIDAS)}"),
                     "Nombre": st.column_config.TextColumn("Nombre", required=True),
                     "Contenido": st.column_config.TextColumn("Contenido", width="large")
+                    # SE ELIMINÓ LA CONFIGURACIÓN DE PLANTILLAS
                 }
             )
             if st.form_submit_button("🚀 Guardar Cambios"):
@@ -226,6 +256,7 @@ with tab2:
                     nuevos.append({
                         "Proyecto_Padre": proy_sel, "Entregable": r["Nombre"], "Contenido": r["Contenido"],
                         "Categoría": cat, "Subcategoría": r["Subcategorías"], 
+                        # SE ELIMINÓ EL CAMPO 'Plantillas' AQUÍ
                         "Fecha_Registro": hoy
                     })
                 save_data(pd.concat([df_m, pd.DataFrame(nuevos)], ignore_index=True), "Entregables")
@@ -233,7 +264,7 @@ with tab2:
                 st.success("Guardado"); time.sleep(1); st.rerun()
 
 # ==========================================
-# PESTAÑA 3: EDICIÓN (LIMPIA - SIN ESTATUS/RESPONSABLE/PLANTILLAS)
+# PESTAÑA 3: EDICIÓN (LIMPIA)
 # ==========================================
 with tab3:
     st.header("📝 Edición")
@@ -286,10 +317,9 @@ with tab3:
 
         with st.expander("Entregables", expanded=True):
             if not st.session_state.p3_buffer_ent.empty:
-                # FILTRO PARA MOSTRAR SOLO COLUMNAS ESENCIALES
-                # Quitamos: Estatus, Responsable, Observaciones, Plantillas
+                # FILTRO PARA MOSTRAR SOLO COLUMNAS ESENCIALES (LIMPIO)
+                # Solo muestra: Nombre, Contenido, Subcategoría y Fecha.
                 cols_limpias = ["Entregable", "Contenido", "Subcategoría", "Fecha_Registro"]
-                # Asegurar que existan
                 cols_final = [c for c in cols_limpias if c in st.session_state.p3_buffer_ent.columns]
                 
                 ed_e = st.data_editor(st.session_state.p3_buffer_ent[cols_final], use_container_width=True, key="ee3", 
@@ -300,7 +330,7 @@ with tab3:
             else: st.info("Sin datos.")
 
 # ==========================================
-# PESTAÑA 4: GRÁFICAS (CON CONTADORES Y ETIQUETAS)
+# PESTAÑA 4: GRÁFICAS Y SEGUIMIENTO
 # ==========================================
 with tab4:
     st.header("📊 Estadísticas en Vivo")
