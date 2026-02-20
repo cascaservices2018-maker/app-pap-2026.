@@ -231,7 +231,8 @@ with tab2:
     
     df_p = load_data("Proyectos")
     if not df_p.empty and "Nombre del Proyecto" in df_p.columns:
-        lista_proy = sorted(df_p["Nombre del Proyecto"].unique().tolist())
+        # CORRECCIÓN PRINCIPAL APLICADA AQUÍ:
+        lista_proy = sorted(df_p["Nombre del Proyecto"].dropna().astype(str).unique().tolist())
         
         # --- LÓGICA DE AUTO-SELECCIÓN ---
         if st.session_state.proy_recien_creado:
@@ -327,12 +328,12 @@ with tab3:
         
         # 1. Año
         with c1:
-            f_ano = st.multiselect("Año:", sorted(df_p3["Año"].unique()), key="f3_ano")
+            f_ano = st.multiselect("Año:", sorted(df_p3["Año"].dropna().unique()), key="f3_ano")
             if f_ano: df_embudo = df_embudo[df_embudo["Año"].isin(f_ano)]
             
         # 2. Periodo (Depende de Año)
         with c2:
-            f_per = st.multiselect("Periodo:", sorted(df_embudo["Periodo"].unique()), key="f3_per")
+            f_per = st.multiselect("Periodo:", sorted(df_embudo["Periodo"].dropna().astype(str).unique()), key="f3_per")
             if f_per: df_embudo = df_embudo[df_embudo["Periodo"].isin(f_per)]
             
         # 3. Categoría (Depende de Año + Periodo)
@@ -360,7 +361,7 @@ with tab3:
 
         # 5. Proyecto Final
         with c0:
-            f_nom = st.multiselect("🔍 Proyecto:", sorted(df_embudo["Nombre del Proyecto"].unique()), key="f3_nom")
+            f_nom = st.multiselect("🔍 Proyecto:", sorted(df_embudo["Nombre del Proyecto"].dropna().astype(str).unique()), key="f3_nom")
             if f_nom: df_embudo = df_embudo[df_embudo["Nombre del Proyecto"].isin(f_nom)]
 
         # --- BÚNKER DE MEMORIA P3 ---
@@ -456,7 +457,7 @@ with tab3:
 
         st.warning("Esta acción borrará el proyecto y TODOS sus entregables asociados.")
         
-        lista_borrar = sorted(df_embudo["Nombre del Proyecto"].unique())
+        lista_borrar = sorted(df_embudo["Nombre del Proyecto"].dropna().astype(str).unique())
         proy_borrar = st.selectbox("Seleccionar Proyecto a Eliminar Definitivamente:", options=lista_borrar, key="borrar_selector")
         
         if st.button("🚨 BORRAR PROYECTO Y SUS ENTREGABLES"):
@@ -497,7 +498,7 @@ with tab4:
         if not df_eg.empty: df_eg["Subcategoría"] = df_eg["Subcategoría"].apply(limpiar_textos)
 
         c1, c2, c3, c4 = st.columns(4)
-        yg = c1.multiselect("Año", sorted(df_pg["Año"].unique()), default=sorted(df_pg["Año"].unique()), key="g_y")
+        yg = c1.multiselect("Año", sorted(df_pg["Año"].dropna().unique()), default=sorted(df_pg["Año"].dropna().unique()), key="g_y")
         pg = c2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="g_p")
         cg = c3.multiselect("Categoría", CATEGORIAS_LISTA, key="g_c")
         sg = c4.multiselect("Subcategoría", sorted(SUBCATEGORIAS_SUGERIDAS), key="g_s")
@@ -622,7 +623,7 @@ with tab7:
         fc1, fc2, fc3, fc4 = st.columns(4)
         
         # Filtros idénticos a gráficas
-        f_years = fc1.multiselect("Año", sorted(df_c_proy["Año"].unique()), key="c_y")
+        f_years = fc1.multiselect("Año", sorted(df_c_proy["Año"].dropna().unique()), key="c_y")
         f_period = fc2.multiselect("Periodo", ["Primavera", "Verano", "Otoño"], key="c_p")
         f_categ = fc3.multiselect("Categoría", CATEGORIAS_LISTA, key="c_c")
         f_subcat = fc4.multiselect("Subcategoría", sorted(SUBCATEGORIAS_SUGERIDAS), key="c_s")
