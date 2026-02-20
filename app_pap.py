@@ -516,7 +516,10 @@ with tab4:
                 vis = df_f["Nombre del Proyecto"].unique()
                 ev = df_eg[df_eg["Proyecto_Padre"].isin(vis)]
                 if not ev.empty:
-                    mapa = df_f.set_index("Nombre del Proyecto")["Año"].to_dict()
+                    # CORRECCIÓN: Eliminar duplicados antes de crear el mapa para evitar InvalidIndexError
+                    proys_unicos = df_f.drop_duplicates(subset=["Nombre del Proyecto"])
+                    mapa = proys_unicos.set_index("Nombre del Proyecto")["Año"].to_dict()
+                    
                     ev["Año_R"] = ev["Proyecto_Padre"].map(mapa)
                     ea = ev["Año_R"].value_counts().reset_index(); ea.columns=["Año","Total"]; ea["Tipo"]="Entregables"
             
@@ -678,3 +681,4 @@ with tab7:
                 st.dataframe(df_filtered_entr[["Proyecto_Padre", "Entregable", "Subcategoría", "Contenido"]], use_container_width=True, hide_index=True)
     else:
         st.info("No hay datos cargados.")
+
